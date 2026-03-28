@@ -26,6 +26,7 @@ export default function RoomView() {
   const [error, setError] = useState(null);
   const [copyDone, setCopyDone] = useState(false);
   const [scoringId, setScoringId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -71,6 +72,19 @@ export default function RoomView() {
       setError(e.message || 'Could not score round');
     } finally {
       setScoringId(null);
+    }
+  };
+
+  const handleDeleteRound = async (roundId) => {
+    if (!window.confirm('Delete this round? All policies and results will be lost.')) return;
+    setDeletingId(roundId);
+    try {
+      await api.deleteRound(roundId);
+      await load();
+    } catch (e) {
+      setError(e.message || 'Could not delete round');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -190,14 +204,24 @@ export default function RoomView() {
                             Policy editor
                           </Link>
                           {isProfessor && (
-                            <button
-                              type="button"
-                              disabled={scoringId === r.id}
-                              onClick={() => handleScoreRound(r.id)}
-                              className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-                            >
-                              {scoringId === r.id ? 'Scoring…' : 'Score Round'}
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                disabled={scoringId === r.id}
+                                onClick={() => handleScoreRound(r.id)}
+                                className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                              >
+                                {scoringId === r.id ? 'Scoring…' : 'Score Round'}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={deletingId === r.id}
+                                onClick={() => handleDeleteRound(r.id)}
+                                className="rounded-lg border border-red-500/40 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                              >
+                                {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                              </button>
+                            </>
                           )}
                         </>
                       )}
@@ -215,6 +239,16 @@ export default function RoomView() {
                           >
                             Leaderboard
                           </Link>
+                          {isProfessor && (
+                            <button
+                              type="button"
+                              disabled={deletingId === r.id}
+                              onClick={() => handleDeleteRound(r.id)}
+                              className="rounded-lg border border-red-500/40 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                            >
+                              {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
