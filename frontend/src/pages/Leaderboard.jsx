@@ -149,9 +149,8 @@ export default function Leaderboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <header className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold text-slate-100">Leaderboard</h1>
           <div className="flex gap-2">
             <TabButton
@@ -169,7 +168,7 @@ export default function Leaderboard() {
               Season
             </TabButton>
           </div>
-        </header>
+        </div>
 
         {loading && <p className="text-amber-500">Loading…</p>}
         {error && <p className="text-red-400">{error}</p>}
@@ -283,7 +282,6 @@ export default function Leaderboard() {
             )}
           </div>
         )}
-      </div>
     </div>
   );
 }

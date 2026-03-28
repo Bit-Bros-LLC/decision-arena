@@ -58,7 +58,7 @@ export default function RoundResults() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
+      <div className="p-6">
         <p className="text-amber-500">Loading results…</p>
       </div>
     );
@@ -66,7 +66,7 @@ export default function RoundResults() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
+      <div className="p-6">
         <p className="text-red-400">{error}</p>
         <Link
           to={`/leaderboard/${roundId}`}
@@ -87,17 +87,16 @@ export default function RoundResults() {
   const slPct = (data.service_level ?? 0) * 100;
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
-      <div className="mx-auto max-w-6xl space-y-8">
-        <header className="flex flex-wrap items-center justify-between gap-4">
+    <div className="space-y-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold text-slate-100">Round results</h1>
           <Link
             to={`/leaderboard/${roundId}`}
             className="rounded-lg border border-amber-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-amber-500 transition hover:bg-slate-700"
           >
-            ← Leaderboard
+            Leaderboard
           </Link>
-        </header>
+        </div>
 
         <section className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg">
           <h2 className="mb-4 text-lg font-medium text-amber-500">Summary</h2>
@@ -215,7 +214,6 @@ export default function RoundResults() {
             </table>
           </div>
         </section>
-      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import RoomView from './pages/RoomView'
@@ -6,25 +6,35 @@ import PolicyEditor from './pages/PolicyEditor'
 import RoundResults from './pages/RoundResults'
 import Leaderboard from './pages/Leaderboard'
 import Admin from './pages/Admin'
+import NavBar from './components/NavBar'
 import { getUser } from './api'
 
-function ProtectedRoute({ children }) {
+function ProtectedLayout() {
   const user = getUser();
   if (!user) return <Navigate to="/login" replace />;
-  return children;
+  return (
+    <>
+      <NavBar />
+      <main className="max-w-7xl mx-auto px-4 py-6">
+        <Outlet />
+      </main>
+    </>
+  );
 }
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-      <Route path="/room/:roomId" element={<ProtectedRoute><RoomView /></ProtectedRoute>} />
-      <Route path="/room/:roomId/create-round" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
-      <Route path="/round/:roundId" element={<ProtectedRoute><PolicyEditor /></ProtectedRoute>} />
-      <Route path="/round/:roundId/results" element={<ProtectedRoute><RoundResults /></ProtectedRoute>} />
-      <Route path="/leaderboard/season/:roomId" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-      <Route path="/leaderboard/:roundId" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+      <Route element={<ProtectedLayout />}>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/room/:roomId" element={<RoomView />} />
+        <Route path="/room/:roomId/create-round" element={<Admin />} />
+        <Route path="/round/:roundId" element={<PolicyEditor />} />
+        <Route path="/round/:roundId/results" element={<RoundResults />} />
+        <Route path="/leaderboard/season/:roomId" element={<Leaderboard />} />
+        <Route path="/leaderboard/:roundId" element={<Leaderboard />} />
+      </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

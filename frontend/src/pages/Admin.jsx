@@ -98,12 +98,11 @@ export default function Admin() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
-      <div className="mx-auto max-w-3xl space-y-8">
-        <header>
+    <div className="space-y-8 max-w-3xl">
+        <div>
           <h1 className="text-2xl font-semibold text-slate-100">Create round</h1>
           <p className="mt-1 text-sm text-slate-400">Room: {roomId}</p>
-        </header>
+        </div>
 
         <form
           onSubmit={handleSubmit}
@@ -237,7 +236,6 @@ export default function Admin() {
             </button>
           </div>
         </form>
-      </div>
     </div>
   );
 }

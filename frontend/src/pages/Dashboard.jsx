@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, getUser, logout } from '../api';
+import { api, getUser } from '../api';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -82,27 +82,7 @@ export default function Dashboard() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-200">
-      <header className="border-b border-slate-700 bg-slate-800 px-4 py-4 sm:px-6">
-        <div className="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold text-amber-400">Decision Arena</h1>
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-slate-300">{user.display_name}</span>
-            <span className="rounded-full border border-amber-500/50 bg-amber-500/10 px-2.5 py-0.5 text-xs font-medium uppercase tracking-wide text-amber-400">
-              {user.role}
-            </span>
-            <button
-              type="button"
-              onClick={() => logout()}
-              className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm text-slate-300 transition hover:border-amber-500/50 hover:text-amber-400"
-            >
-              Logout
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-4xl space-y-8 px-4 py-8 sm:px-6">
+    <div className="space-y-8">
         {lastCreated && (
           <div className="rounded-xl border-2 border-amber-500/60 bg-slate-800 p-6 shadow-lg">
             <p className="text-sm font-medium text-amber-400">Room created</p>
@@ -245,7 +225,6 @@ export default function Dashboard() {
             ))}
           </ul>
         </section>
-      </main>
     </div>
   );
 }

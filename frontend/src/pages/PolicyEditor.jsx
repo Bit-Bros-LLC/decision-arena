@@ -197,7 +197,7 @@ export default function PolicyEditor() {
 
   if (loadError) {
     return (
-      <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
+      <div className="p-6">
         <p className="text-red-400">{loadError}</p>
       </div>
     );
@@ -205,7 +205,7 @@ export default function PolicyEditor() {
 
   if (!round && !loadError) {
     return (
-      <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
+      <div className="p-6">
         <p className="text-amber-500">Loading round…</p>
       </div>
     );
@@ -215,7 +215,7 @@ export default function PolicyEditor() {
   const canEdit = user && roundActive;
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-200">
+    <div className="text-slate-200">
       <div className="border-b border-slate-800 bg-slate-800/80 px-4 py-4 md:px-6">
         <h1 className="text-xl font-semibold text-slate-100">
           Policy designer

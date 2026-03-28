@@ -76,7 +76,7 @@ export default function RoomView() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
+      <div className="p-6">
         <p className="text-amber-500">Loading room…</p>
       </div>
     );
@@ -84,30 +84,22 @@ export default function RoomView() {
 
   if (!room) {
     return (
-      <div className="min-h-screen bg-slate-900 p-6 text-slate-200">
+      <div className="p-6">
         <p className="text-red-400">{error || 'Room not found or you are not a member.'}</p>
-        <button
-          type="button"
-          onClick={() => navigate('/')}
-          className="mt-4 rounded-lg border border-amber-500/50 px-4 py-2 text-amber-500 hover:bg-amber-500/10"
-        >
-          Back
-        </button>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-4 text-slate-200 md:p-8">
-      <div className="mx-auto max-w-3xl">
-        <header className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
-            {room.name}
-          </h1>
-          <p className="mt-1 text-sm text-slate-400">
-            {room.member_count} member{room.member_count === 1 ? '' : 's'}
-          </p>
-        </header>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
+          {room.name}
+        </h1>
+        <p className="mt-1 text-sm text-slate-400">
+          {room.member_count} member{room.member_count === 1 ? '' : 's'}
+        </p>
+      </div>
 
         {error && (
           <div
@@ -232,7 +224,6 @@ export default function RoomView() {
             })}
           </ul>
         )}
-      </div>
     </div>
   );
 }
