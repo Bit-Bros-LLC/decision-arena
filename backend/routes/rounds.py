@@ -121,6 +121,28 @@ def list_rounds(
     ]
 
 
+@router.delete("/{round_id}")
+def delete_round(
+    round_id: str,
+    user: UserRow = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
+    if not rnd:
+        raise HTTPException(404, "Round not found")
+
+    room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
+    if room.professor_id != user.id:
+        raise HTTPException(403, "Not your room")
+
+    db.query(ResultRow).filter(ResultRow.round_id == round_id).delete()
+    db.query(PolicyRow).filter(PolicyRow.round_id == round_id).delete()
+    db.delete(rnd)
+    db.commit()
+
+    return {"message": "Round deleted"}
+
+
 @router.post("/{round_id}/score")
 def score_round(
     round_id: str,
