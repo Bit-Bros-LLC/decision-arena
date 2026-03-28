@@ -146,13 +146,18 @@ export default function Admin() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-amber-500">Deadline</label>
+            <label className="block text-sm font-medium text-amber-500">
+              Deadline <span className="font-normal text-slate-500">(e.g. 2026-04-30 11:59 PM)</span>
+            </label>
             <input
               type="datetime-local"
               value={deadline}
               onChange={(e) => setDeadline(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Students must submit their policies before this date/time.
+            </p>
           </div>
 
           <div>

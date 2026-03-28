@@ -15,9 +15,21 @@ import {
 import { api, getUser } from '../api';
 
 const TEMPLATES = [
-  { id: 'order_up_to', label: 'Order Up To' },
-  { id: 'service_level', label: 'Service Level' },
-  { id: 'reorder_point', label: 'Reorder Point' },
+  {
+    id: 'order_up_to',
+    label: 'Order Up To',
+    desc: 'Set a target inventory level (S). Each day, order enough to bring your inventory position back up to S.',
+  },
+  {
+    id: 'service_level',
+    label: 'Service Level',
+    desc: 'Target a fill rate (e.g. 95%). The system calculates safety stock from recent demand variability and lead times.',
+  },
+  {
+    id: 'reorder_point',
+    label: 'Reorder Point',
+    desc: 'When inventory drops below a threshold (s), place a fixed-size order (Q). Classic (s, Q) policy.',
+  },
 ];
 
 const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99];
@@ -326,6 +338,7 @@ export default function PolicyEditor() {
                     ? 'border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/40'
                     : 'border-slate-600 hover:border-slate-500'
                 }`}
+                title={t.desc}
               >
                 <input
                   type="radio"
@@ -336,6 +349,7 @@ export default function PolicyEditor() {
                   disabled={!canEdit}
                 />
                 <span className="text-sm font-medium text-slate-100">{t.label}</span>
+                <p className="mt-1 text-xs leading-snug text-slate-400">{t.desc}</p>
               </label>
             ))}
           </div>
