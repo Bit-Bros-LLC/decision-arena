@@ -162,6 +162,18 @@ export default function Login() {
           </button>
         </form>
       </div>
+
+      <p className="mt-6 text-center text-xs text-slate-500">
+        Created by{' '}
+        <a
+          href="https://bitbrosdata.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-slate-400 hover:text-amber-400 transition"
+        >
+          Bit Bros LLC
+        </a>
+      </p>
     </div>
   );
 }
