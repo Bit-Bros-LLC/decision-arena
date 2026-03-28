@@ -18,7 +18,6 @@ router = APIRouter(prefix="/rounds", tags=["rounds"])
 
 class CreateRoundRequest(BaseModel):
     room_id: str
-    round_number: int
     historical_data: list[dict]
     actual_data: list[dict]
     costs: dict
@@ -48,11 +47,12 @@ def create_round(
     if not room or room.professor_id != user.id:
         raise HTTPException(403, "Not your room")
 
+    existing_count = db.query(RoundRow).filter(RoundRow.room_id == body.room_id).count()
     deadline_dt = datetime.fromisoformat(body.deadline)
 
     rnd = RoundRow(
         room_id=body.room_id,
-        round_number=body.round_number,
+        round_number=existing_count + 1,
         historical_data=body.historical_data,
         actual_data=body.actual_data,
         costs=body.costs,
