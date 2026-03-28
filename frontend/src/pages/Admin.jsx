@@ -33,7 +33,6 @@ export default function Admin() {
   const { roomId } = useParams();
   const navigate = useNavigate();
 
-  const [roundNumber, setRoundNumber] = useState(1);
   const [costs, setCosts] = useState(DEFAULT_COSTS);
   const [startingInventory, setStartingInventory] = useState(100);
   const [deadline, setDeadline] = useState('');
@@ -82,7 +81,6 @@ export default function Admin() {
     try {
       await api.createRound({
         room_id: roomId,
-        round_number: Number(roundNumber),
         historical_data,
         actual_data,
         costs,
@@ -108,17 +106,6 @@ export default function Admin() {
           onSubmit={handleSubmit}
           className="space-y-8 rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg"
         >
-          <div>
-            <label className="block text-sm font-medium text-amber-500">Round number</label>
-            <input
-              type="number"
-              min={1}
-              value={roundNumber}
-              onChange={(e) => setRoundNumber(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            />
-          </div>
-
           <fieldset className="space-y-4">
             <legend className="text-lg font-medium text-amber-500">Cost parameters</legend>
             <div className="grid gap-4 sm:grid-cols-2">
