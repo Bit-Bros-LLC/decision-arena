@@ -26,6 +26,7 @@ export default function RoomView() {
   const [error, setError] = useState(null);
   const [copyDone, setCopyDone] = useState(false);
   const [scoringId, setScoringId] = useState(null);
+  const [activatingId, setActivatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
   const load = useCallback(async () => {
@@ -72,6 +73,18 @@ export default function RoomView() {
       setError(e.message || 'Could not score round');
     } finally {
       setScoringId(null);
+    }
+  };
+
+  const handleActivateRound = async (roundId) => {
+    setActivatingId(roundId);
+    try {
+      await api.activateRound(roundId);
+      await load();
+    } catch (e) {
+      setError(e.message || 'Could not activate round');
+    } finally {
+      setActivatingId(null);
     }
   };
 
@@ -169,33 +182,60 @@ export default function RoomView() {
         ) : (
           <ul className="space-y-4">
             {rounds.map((r) => {
-              const active = r.status === 'active';
+              const statusColor =
+                r.status === 'draft'
+                  ? 'text-slate-400'
+                  : r.status === 'active'
+                    ? 'text-amber-400'
+                    : 'text-emerald-400';
               return (
                 <li
                   key={r.id}
-                  className="rounded-xl border border-slate-700 bg-slate-800 p-5 shadow-md"
+                  className={`rounded-xl border p-5 shadow-md ${
+                    r.status === 'draft'
+                      ? 'border-dashed border-slate-600 bg-slate-800/60'
+                      : 'border-slate-700 bg-slate-800'
+                  }`}
                 >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="font-semibold text-slate-100">
                         Round {r.round_number}
+                        {r.status === 'draft' && (
+                          <span className="ml-2 rounded bg-slate-700 px-2 py-0.5 text-xs font-normal text-slate-400">
+                            Draft
+                          </span>
+                        )}
                       </p>
                       <p className="mt-1 text-sm capitalize text-slate-400">
-                        Status:{' '}
-                        <span
-                          className={
-                            active ? 'text-amber-400' : 'text-emerald-400'
-                          }
-                        >
-                          {r.status}
-                        </span>
+                        Status: <span className={statusColor}>{r.status}</span>
                       </p>
                       <p className="mt-1 text-sm text-slate-500">
                         Deadline: {formatDeadline(r.deadline)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {active && (
+                      {r.status === 'draft' && isProfessor && (
+                        <>
+                          <button
+                            type="button"
+                            disabled={activatingId === r.id}
+                            onClick={() => handleActivateRound(r.id)}
+                            className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-amber-400 disabled:opacity-50"
+                          >
+                            {activatingId === r.id ? 'Activating…' : 'Activate'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={deletingId === r.id}
+                            onClick={() => handleDeleteRound(r.id)}
+                            className="rounded-lg border border-red-500/40 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                          >
+                            {deletingId === r.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        </>
+                      )}
+                      {r.status === 'active' && (
                         <>
                           <Link
                             to={`/round/${r.id}`}
@@ -225,7 +265,7 @@ export default function RoomView() {
                           )}
                         </>
                       )}
-                      {!active && (
+                      {r.status === 'scored' && (
                         <>
                           <Link
                             to={`/round/${r.id}/results`}

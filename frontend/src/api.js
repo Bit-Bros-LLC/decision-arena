@@ -34,6 +34,8 @@ export const api = {
   getRoomRounds: (roomId) => request(`/rounds/room/${roomId}`),
   createRound: (body) => request('/rounds', { method: 'POST', body: JSON.stringify(body) }),
   scoreRound: (roundId) => request(`/rounds/${roundId}/score`, { method: 'POST' }),
+  activateRound: (roundId) => request(`/rounds/${roundId}/activate`, { method: 'POST' }),
+  deleteRound: (roundId) => request(`/rounds/${roundId}`, { method: 'DELETE' }),
 
   savePolicy: (body) => request('/policies', { method: 'PUT', body: JSON.stringify(body) }),
   getMyPolicy: (roundId) => request(`/policies/${roundId}`),
