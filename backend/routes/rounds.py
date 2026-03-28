@@ -58,7 +58,7 @@ def create_round(
         costs=body.costs,
         starting_inventory=body.starting_inventory,
         deadline=deadline_dt,
-        status="active",
+        status="draft",
     )
     db.add(rnd)
     db.commit()
@@ -83,6 +83,9 @@ def get_round(
         .first()
         is not None
     )
+    if rnd.status == "draft" and not is_professor:
+        raise HTTPException(403, "This round is not yet active")
+
     reveal = rnd.status == "scored" or is_professor
     return _round_response(rnd, reveal_actuals=reveal)
 
@@ -115,10 +118,34 @@ def list_rounds(
         is not None
     )
 
+    visible = rounds if is_professor else [r for r in rounds if r.status != "draft"]
+
     return [
         _round_response(r, reveal_actuals=(r.status == "scored" or is_professor))
-        for r in rounds
+        for r in visible
     ]
+
+
+@router.post("/{round_id}/activate")
+def activate_round(
+    round_id: str,
+    user: UserRow = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
+    if not rnd:
+        raise HTTPException(404, "Round not found")
+
+    room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
+    if room.professor_id != user.id:
+        raise HTTPException(403, "Not your room")
+
+    if rnd.status != "draft":
+        raise HTTPException(400, f"Round is already {rnd.status}")
+
+    rnd.status = "active"
+    db.commit()
+    return {"message": "Round activated"}
 
 
 @router.delete("/{round_id}")
