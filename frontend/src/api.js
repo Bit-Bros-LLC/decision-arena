@@ -1,4 +1,4 @@
-const BASE = '';
+const BASE = import.meta.env.VITE_API_URL || '';
 
 function getToken() {
   return localStorage.getItem('da_token');
@@ -16,8 +16,9 @@ async function request(path, options = {}) {
     window.location.href = '/login';
     return;
   }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.detail || 'Request failed');
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : {};
+  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
   return data;
 }
 
