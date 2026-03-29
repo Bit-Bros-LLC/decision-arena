@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from auth import hash_password, verify_password, create_token
 from database import UserRow, get_db
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
 
 
 class RegisterRequest(BaseModel):
@@ -35,12 +40,13 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     if body.role not in ("student", "professor"):
         raise HTTPException(400, "Role must be 'student' or 'professor'")
 
-    existing = db.query(UserRow).filter(UserRow.email == body.email).first()
+    email = normalize_email(body.email)
+    existing = db.query(UserRow).filter(func.lower(UserRow.email) == email).first()
     if existing:
         raise HTTPException(409, "Email already registered")
 
     user = UserRow(
-        email=body.email,
+        email=email,
         password_hash=hash_password(body.password),
         display_name=body.display_name,
         role=body.role,
@@ -60,7 +66,8 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(UserRow).filter(UserRow.email == body.email).first()
+    email = normalize_email(body.email)
+    user = db.query(UserRow).filter(func.lower(UserRow.email) == email).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password")
 
