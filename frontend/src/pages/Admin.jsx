@@ -77,6 +77,25 @@ export default function Admin() {
   const [chartError, setChartError] = useState(null);
   const [previewChartData, setPreviewChartData] = useState([]);
   const [previewBoundary, setPreviewBoundary] = useState(null);
+  const [roomLabel, setRoomLabel] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setRoomLabel(null);
+    (async () => {
+      try {
+        const rooms = await api.getRooms();
+        if (cancelled) return;
+        const found = rooms.find((r) => r.id === roomId);
+        setRoomLabel(found?.name ?? roomId);
+      } catch {
+        if (!cancelled) setRoomLabel(roomId);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
 
   const copyClaudePrompt = async () => {
     try {
@@ -194,7 +213,10 @@ export default function Admin() {
     <div className="space-y-8 max-w-3xl">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">Create round</h1>
-          <p className="mt-1 text-sm text-slate-400">Room: {roomId}</p>
+          <p className="mt-1 text-sm text-slate-400">
+            Room:{' '}
+            <span className="text-slate-200">{roomLabel ?? '…'}</span>
+          </p>
         </div>
 
         <form
