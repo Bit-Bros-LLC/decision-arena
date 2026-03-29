@@ -29,13 +29,33 @@ function generateHistoricalDays(count) {
   return rows;
 }
 
+/** Next Sunday at 00:00 local time. If today is Sunday and midnight has passed, uses the following Sunday. */
+function nextSundayMidnightLocal() {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const day = d.getDay();
+  let daysToAdd = (7 - day) % 7;
+  if (daysToAdd === 0) {
+    d.setHours(0, 0, 0, 0);
+    if (now.getTime() >= d.getTime()) {
+      daysToAdd = 7;
+    }
+  }
+  if (daysToAdd > 0) {
+    d.setDate(d.getDate() + daysToAdd);
+  }
+  d.setHours(0, 0, 0, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T00:00`;
+}
+
 export default function Admin() {
   const { roomId } = useParams();
   const navigate = useNavigate();
 
   const [costs, setCosts] = useState(DEFAULT_COSTS);
   const [startingInventory, setStartingInventory] = useState(100);
-  const [deadline, setDeadline] = useState('');
+  const [deadline, setDeadline] = useState(nextSundayMidnightLocal);
   const [historicalJson, setHistoricalJson] = useState('[]');
   const [actualJson, setActualJson] = useState('[]');
   const [submitError, setSubmitError] = useState(null);
@@ -147,13 +167,16 @@ export default function Admin() {
 
           <div>
             <label className="block text-sm font-medium text-amber-500">
-              Deadline <span className="font-normal text-slate-500">(e.g. 2026-04-30 11:59 PM)</span>
+              Submission deadline{' '}
+              <span className="font-normal text-slate-500">
+                (calendar — local time; defaults to next Sunday at midnight)
+              </span>
             </label>
             <input
               type="datetime-local"
               value={deadline}
               onChange={(e) => setDeadline(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
             />
             <p className="mt-1 text-xs text-slate-500">
               Students must submit their policies before this date/time.

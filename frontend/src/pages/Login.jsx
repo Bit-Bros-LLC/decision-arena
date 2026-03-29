@@ -29,7 +29,11 @@ export default function Login() {
       setAuth(data);
       navigate('/');
     } catch (err) {
-      setError(err.message || 'Something went wrong');
+      if (mode === 'login' && err.status === 401) {
+        setError('Invalid Password/Login. Try again');
+      } else {
+        setError(err.message || 'Something went wrong');
+      }
     } finally {
       setSubmitting(false);
     }
