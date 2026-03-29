@@ -1,6 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid,
+  ReferenceLine,
+  Legend,
+} from 'recharts';
 import { api } from '../api';
+import { CLAUDE_ROUND_DATA_PROMPT } from '../claudeRoundDataPrompt';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -60,6 +72,21 @@ export default function Admin() {
   const [actualJson, setActualJson] = useState('[]');
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [copyClaudeDone, setCopyClaudeDone] = useState(false);
+  const [chartOpen, setChartOpen] = useState(false);
+  const [chartError, setChartError] = useState(null);
+  const [previewChartData, setPreviewChartData] = useState([]);
+  const [previewBoundary, setPreviewBoundary] = useState(null);
+
+  const copyClaudePrompt = async () => {
+    try {
+      await navigator.clipboard.writeText(CLAUDE_ROUND_DATA_PROMPT);
+      setCopyClaudeDone(true);
+      setTimeout(() => setCopyClaudeDone(false), 2000);
+    } catch {
+      setCopyClaudeDone(false);
+    }
+  };
 
   const updateCost = (key, raw) => {
     const num = key === 'insurance_coverage_pct' ? parseFloat(raw) : parseFloat(raw);
@@ -72,6 +99,54 @@ export default function Admin() {
 
   const fillActualSample = () => {
     setActualJson(JSON.stringify(generateHistoricalDays(30), null, 2));
+  };
+
+  useEffect(() => {
+    if (!chartOpen) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setChartOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chartOpen]);
+
+  const openDemandChartPreview = () => {
+    setChartError(null);
+    let historical;
+    let actual;
+    try {
+      historical = JSON.parse(historicalJson);
+      actual = JSON.parse(actualJson);
+    } catch {
+      setChartError('Historical or actual data is not valid JSON.');
+      return;
+    }
+    if (!Array.isArray(historical) || !Array.isArray(actual)) {
+      setChartError('Historical and actual data must be JSON arrays.');
+      return;
+    }
+    if (historical.length === 0 || actual.length === 0) {
+      setChartError('Both historical and actual arrays need at least one day.');
+      return;
+    }
+    const demandVal = (row) => {
+      const n = Number(row?.demand);
+      return Number.isFinite(n) ? n : null;
+    };
+    setPreviewChartData([
+      ...historical.map((row, i) => ({
+        x: i + 1,
+        demandHistorical: demandVal(row),
+        demandActual: null,
+      })),
+      ...actual.map((row, i) => ({
+        x: historical.length + i + 1,
+        demandHistorical: null,
+        demandActual: demandVal(row),
+      })),
+    ]);
+    setPreviewBoundary(historical.length + 0.5);
+    setChartOpen(true);
   };
 
   const handleSubmit = async (e) => {
@@ -183,6 +258,25 @@ export default function Admin() {
             </p>
           </div>
 
+          <div className="rounded-lg border border-slate-600 bg-slate-900/50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-slate-200">Generate data with an assistant</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Paste the copied instructions into Claude (or any AI); paste the JSON it produces into the
+                  fields below.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={copyClaudePrompt}
+                className="shrink-0 rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-xs font-medium text-amber-500 hover:bg-slate-700"
+              >
+                {copyClaudeDone ? 'Copied!' : 'Copy Claude instructions'}
+              </button>
+            </div>
+          </div>
+
           <div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-sm font-medium text-amber-500">Historical data (JSON)</label>
@@ -202,7 +296,10 @@ export default function Admin() {
             </p>
             <textarea
               value={historicalJson}
-              onChange={(e) => setHistoricalJson(e.target.value)}
+              onChange={(e) => {
+                setChartError(null);
+                setHistoricalJson(e.target.value);
+              }}
               rows={8}
               className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
               spellCheck={false}
@@ -225,11 +322,25 @@ export default function Admin() {
             </p>
             <textarea
               value={actualJson}
-              onChange={(e) => setActualJson(e.target.value)}
+              onChange={(e) => {
+                setChartError(null);
+                setActualJson(e.target.value);
+              }}
               rows={6}
               className="mt-2 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
               spellCheck={false}
             />
+          </div>
+
+          <div>
+            <button
+              type="button"
+              onClick={openDemandChartPreview}
+              className="rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700"
+            >
+              Preview demand chart
+            </button>
+            {chartError && <p className="mt-2 text-sm text-red-400">{chartError}</p>}
           </div>
 
           {submitError && <p className="text-sm text-red-400">{submitError}</p>}
@@ -251,6 +362,86 @@ export default function Admin() {
             </button>
           </div>
         </form>
+
+      {chartOpen && previewBoundary != null && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="demand-chart-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+          onClick={() => setChartOpen(false)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-4xl overflow-auto rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 id="demand-chart-title" className="text-lg font-semibold text-slate-100">
+                  Demand preview
+                </h2>
+                <p className="mt-1 text-xs text-slate-500">
+                  Historical period (amber), then holdout actuals (sky). Vertical line marks where scoring
+                  period starts.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChartOpen(false)}
+                className="shrink-0 rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 h-72 w-full min-w-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={previewChartData} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                  <XAxis dataKey="x" stroke="#94a3b8" fontSize={11} />
+                  <YAxis stroke="#94a3b8" fontSize={11} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: '#1e293b',
+                      border: '1px solid #475569',
+                      borderRadius: '8px',
+                    }}
+                  />
+                  <Legend wrapperStyle={{ color: '#94a3b8', fontSize: '12px' }} />
+                  <ReferenceLine
+                    x={previewBoundary}
+                    stroke="#94a3b8"
+                    strokeDasharray="4 4"
+                    label={{
+                      value: 'Holdout starts',
+                      position: 'top',
+                      fill: '#94a3b8',
+                      fontSize: 11,
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="demandHistorical"
+                    name="Historical demand"
+                    stroke="#f59e0b"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="demandActual"
+                    name="Actual demand"
+                    stroke="#38bdf8"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
