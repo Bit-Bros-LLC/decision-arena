@@ -17,18 +17,33 @@ export default function NavBar() {
 
   const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const dateStr = now.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  const isHomeRoute = location.pathname === '/';
 
   return (
     <nav className="bg-slate-800 border-b border-slate-700 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={() => navigate('/')}
           className="text-lg font-bold text-amber-400 hover:text-amber-300 transition-colors"
         >
           Decision Arena
         </button>
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          aria-current={isHomeRoute ? 'page' : undefined}
+          className={`text-sm font-medium px-3 py-1.5 rounded-md border transition-colors ${
+            isHomeRoute
+              ? 'border-slate-600 bg-slate-700/60 text-slate-200'
+              : 'border-slate-600 bg-slate-800 text-slate-200 hover:bg-slate-700 hover:border-slate-500'
+          }`}
+        >
+          Home
+        </button>
         {location.pathname !== '/' && (
           <button
+            type="button"
             onClick={() => navigate(-1)}
             className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
           >
