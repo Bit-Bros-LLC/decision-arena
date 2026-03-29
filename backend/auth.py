@@ -18,6 +18,10 @@ ACCESS_TOKEN_EXPIRE_HOURS = 48
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
+def normalize_email(email: str) -> str:
+    return email.strip().lower()
+
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 

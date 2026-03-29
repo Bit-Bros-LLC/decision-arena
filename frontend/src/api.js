@@ -4,21 +4,46 @@ function getToken() {
   return localStorage.getItem('da_token');
 }
 
+function parseDetail(data, fallback) {
+  const d = data?.detail;
+  if (typeof d === 'string') return d;
+  if (Array.isArray(d)) return d.map((x) => x.msg || x).join(', ') || fallback;
+  return fallback;
+}
+
 async function request(path, options = {}) {
   const token = getToken();
   const headers = { 'Content-Type': 'application/json', ...options.headers };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
-  if (res.status === 401) {
-    localStorage.removeItem('da_token');
-    localStorage.removeItem('da_user');
-    window.location.href = '/login';
-    return;
-  }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : {};
-  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+
+  const authFailurePath = path === '/auth/login' || path === '/auth/register';
+
+  if (res.status === 401) {
+    if (!authFailurePath) {
+      localStorage.removeItem('da_token');
+      localStorage.removeItem('da_user');
+      window.location.href = '/login';
+      return;
+    }
+    const err = new Error(parseDetail(data, 'Invalid credentials'));
+    err.status = 401;
+    throw err;
+  }
+
+  if (!res.ok) {
+    const err = new Error(parseDetail(data, `Request failed (${res.status})`));
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
