@@ -60,7 +60,14 @@ def make_service_level(config: dict):
     lookback = int(config.get("lookback_days", 14))
     ins_mode = config.get("insurance_mode", "never")
 
-    z_table = {0.85: 1.04, 0.90: 1.28, 0.95: 1.65, 0.97: 1.88, 0.99: 2.33}
+    z_table = {
+        0.85: 1.04,
+        0.90: 1.28,
+        0.95: 1.65,
+        0.97: 1.88,
+        0.99: 2.33,
+        0.99999: 4.26,  # ~Φ⁻¹(0.99999) for normal safety factor
+    }
 
     def _closest_z(sl: float) -> float:
         if sl in z_table:

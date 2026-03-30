@@ -13,6 +13,7 @@ import {
   Cell,
 } from 'recharts';
 import { api, getUser } from '../api';
+import { UITooltip } from '../components/UITooltip';
 
 const TEMPLATES = [
   {
@@ -32,8 +33,32 @@ const TEMPLATES = [
   },
 ];
 
-const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99];
+const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99, 0.99999];
 const INSURANCE_MODES = ['never', 'always', 'conditional'];
+
+const INSURANCE_HELP =
+  'Each day you decide whether to buy supply-chain insurance. If insured, you pay the daily insurance premium (see cost parameters below) and black swan damage is reduced by your coverage percentage. Never: never buy insurance. Always: buy insurance every day. Conditional: buy insurance when on-hand inventory is below 30% of the average demand over the last 7 days.';
+
+const COST_TOOLTIPS = {
+  'Holding / unit':
+    'Cost charged per unit held in inventory at the end of each day.',
+  'Stockout penalty': 'Cost per unit of demand you cannot fulfill (lost sale / penalty).',
+  'Ordering (fixed)': 'Flat fee added every time you place an order, regardless of size.',
+  'Per-unit cost': 'Purchase or procurement cost for each unit you order.',
+  'Selling price': 'Revenue received for each unit of demand you fulfill.',
+  'Insurance premium': 'Cost you pay each day you choose to buy insurance.',
+  'Insurance coverage':
+    'Share of black swan damage covered by insurance when you are insured (remainder is out-of-pocket).',
+};
+
+function formatServiceLevelOption(o) {
+  const n = Number(o);
+  const pct = n * 100;
+  if (Number.isFinite(pct) && Math.abs(pct - Math.round(pct)) < 1e-9) {
+    return `${Math.round(pct)}%`;
+  }
+  return `${pct.toFixed(3)}%`;
+}
 
 function mean(arr) {
   if (!arr.length) return 0;
@@ -306,16 +331,17 @@ export default function PolicyEditor() {
 
           <h3 className="mt-4 text-xs font-medium text-slate-400">Cost parameters</h3>
           <ul className="mt-2 space-y-1 text-sm text-slate-300">
-            <CostRow label="Holding / unit" v={costs.holding_per_unit} />
-            <CostRow label="Stockout penalty" v={costs.stockout_penalty} />
-            <CostRow label="Ordering (fixed)" v={costs.ordering_fixed} />
-            <CostRow label="Per-unit cost" v={costs.per_unit_cost} />
-            <CostRow label="Selling price" v={costs.selling_price} />
-            <CostRow label="Insurance premium" v={costs.insurance_premium} />
+            <CostRow label="Holding / unit" v={costs.holding_per_unit} tooltip={COST_TOOLTIPS['Holding / unit']} />
+            <CostRow label="Stockout penalty" v={costs.stockout_penalty} tooltip={COST_TOOLTIPS['Stockout penalty']} />
+            <CostRow label="Ordering (fixed)" v={costs.ordering_fixed} tooltip={COST_TOOLTIPS['Ordering (fixed)']} />
+            <CostRow label="Per-unit cost" v={costs.per_unit_cost} tooltip={COST_TOOLTIPS['Per-unit cost']} />
+            <CostRow label="Selling price" v={costs.selling_price} tooltip={COST_TOOLTIPS['Selling price']} />
+            <CostRow label="Insurance premium" v={costs.insurance_premium} tooltip={COST_TOOLTIPS['Insurance premium']} />
             {costs.insurance_coverage_pct != null && (
               <CostRow
                 label="Insurance coverage"
                 v={`${(Number(costs.insurance_coverage_pct) * 100).toFixed(0)}%`}
+                tooltip={COST_TOOLTIPS['Insurance coverage']}
               />
             )}
           </ul>
@@ -360,7 +386,7 @@ export default function PolicyEditor() {
                 <RangeField
                   label="Target level (S)"
                   min={50}
-                  max={500}
+                  max={2000}
                   step={10}
                   value={config.target_level ?? 200}
                   onChange={(v) => updateConfig({ target_level: v })}
@@ -368,6 +394,7 @@ export default function PolicyEditor() {
                 />
                 <SelectField
                   label="Insurance mode"
+                  helpText={INSURANCE_HELP}
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
@@ -381,14 +408,14 @@ export default function PolicyEditor() {
                   label="Target service level"
                   value={String(config.target_service_level ?? 0.95)}
                   options={SERVICE_LEVELS.map(String)}
-                  formatOption={(o) => `${(Number(o) * 100).toFixed(0)}%`}
+                  formatOption={formatServiceLevelOption}
                   onChange={(v) => updateConfig({ target_service_level: Number(v) })}
                   disabled={!canEdit}
                 />
                 <RangeField
                   label="Lookback days"
                   min={7}
-                  max={30}
+                  max={180}
                   step={1}
                   value={config.lookback_days ?? 14}
                   onChange={(v) => updateConfig({ lookback_days: v })}
@@ -396,6 +423,7 @@ export default function PolicyEditor() {
                 />
                 <SelectField
                   label="Insurance mode"
+                  helpText={INSURANCE_HELP}
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
@@ -408,7 +436,7 @@ export default function PolicyEditor() {
                 <RangeField
                   label="Reorder point (s)"
                   min={20}
-                  max={300}
+                  max={2000}
                   step={5}
                   value={config.reorder_point ?? 120}
                   onChange={(v) => updateConfig({ reorder_point: v })}
@@ -417,7 +445,7 @@ export default function PolicyEditor() {
                 <RangeField
                   label="Order quantity (Q)"
                   min={50}
-                  max={400}
+                  max={2000}
                   step={10}
                   value={config.order_quantity ?? 150}
                   onChange={(v) => updateConfig({ order_quantity: v })}
@@ -425,6 +453,7 @@ export default function PolicyEditor() {
                 />
                 <SelectField
                   label="Insurance mode"
+                  helpText={INSURANCE_HELP}
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
@@ -548,13 +577,20 @@ function Stat({ label, value }) {
   );
 }
 
-function CostRow({ label, v }) {
+function CostRow({ label, v, tooltip }) {
   if (v === undefined || v === null) return null;
   const display = typeof v === 'number' ? v.toLocaleString() : String(v);
   return (
-    <li className="flex justify-between gap-2">
-      <span className="text-slate-400">{label}</span>
-      <span className="font-mono text-slate-200">{display}</span>
+    <li>
+      <UITooltip content={tooltip} placement="bottom" fullWidth>
+        <div
+          tabIndex={0}
+          className="flex cursor-help justify-between gap-2 rounded-md px-0.5 py-0.5 outline-none ring-amber-500/0 transition hover:bg-slate-900/50 focus-visible:ring-2 focus-visible:ring-amber-500/40"
+        >
+          <span className="text-slate-400">{label}</span>
+          <span className="font-mono text-slate-200">{display}</span>
+        </div>
+      </UITooltip>
     </li>
   );
 }
@@ -580,8 +616,23 @@ function RangeField({ label, min, max, step, value, onChange, disabled }) {
   );
 }
 
+function HelpHint({ text }) {
+  return (
+    <UITooltip content={text} placement="top">
+      <button
+        type="button"
+        className="ml-0.5 inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-500 text-[10px] font-semibold leading-none text-slate-400 hover:border-amber-500/60 hover:text-amber-400"
+        aria-label="How insurance works"
+      >
+        ?
+      </button>
+    </UITooltip>
+  );
+}
+
 function SelectField({
   label,
+  helpText,
   value,
   options,
   onChange,
@@ -590,7 +641,10 @@ function SelectField({
 }) {
   return (
     <div>
-      <label className="block text-sm text-slate-300">{label}</label>
+      <div className="flex items-center gap-1">
+        <label className="text-sm text-slate-300">{label}</label>
+        {helpText ? <HelpHint text={helpText} /> : null}
+      </div>
       <select
         value={value}
         disabled={disabled}
