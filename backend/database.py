@@ -71,6 +71,7 @@ class RoomRow(Base):
     name = Column(String, nullable=False)
     invite_code = Column(String, unique=True, nullable=False, index=True)
     professor_id = Column(String, ForeignKey("users.id"), nullable=False)
+    completed = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=_now)
 
     professor = relationship("UserRow")
@@ -147,6 +148,26 @@ class ResultRow(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
+
+
+def _migrate_schema():
+    """Add columns missing from older SQLite/Postgres DBs."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("rooms"):
+        return
+    cols = {c["name"] for c in insp.get_columns("rooms")}
+    if "completed" in cols:
+        return
+    with engine.begin() as conn:
+        if DATABASE_URL.startswith("sqlite"):
+            conn.execute(text("ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT 0"))
+        else:
+            conn.execute(
+                text("ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT FALSE")
+            )
 
 
 def get_db():

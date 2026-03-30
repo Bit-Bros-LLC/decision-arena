@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_professor
-from database import UserRow, RoomRow, RoomMemberRow, get_db
+from database import UserRow, RoomRow, RoomMemberRow, RoundRow, get_db
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -26,9 +26,31 @@ class RoomResponse(BaseModel):
     professor_id: str
     professor_name: str
     member_count: int
+    completed: bool
+    round_display: str
 
     class Config:
         from_attributes = True
+
+
+def _round_display(room: RoomRow, db: Session) -> str:
+    """Label for home list: active round number or status phrase."""
+    if getattr(room, "completed", False):
+        return "Complete"
+    rounds = (
+        db.query(RoundRow)
+        .filter(RoundRow.room_id == room.id)
+        .order_by(RoundRow.round_number)
+        .all()
+    )
+    if not rounds:
+        return "Not started"
+    active = next((r for r in rounds if r.status == "active"), None)
+    if active:
+        return f"Round {active.round_number}"
+    if any(r.status == "scored" for r in rounds):
+        return "Pending"
+    return "Preparing"
 
 
 def _room_response(room: RoomRow, db: Session) -> dict:
@@ -40,6 +62,8 @@ def _room_response(room: RoomRow, db: Session) -> dict:
         "professor_id": room.professor_id,
         "professor_name": room.professor.display_name,
         "member_count": count,
+        "completed": bool(getattr(room, "completed", False)),
+        "round_display": _round_display(room, db),
     }
 
 
@@ -98,3 +122,20 @@ def join_room(
     db.add(RoomMemberRow(user_id=user.id, room_id=room.id))
     db.commit()
     return {"message": "Joined room", "room_id": room.id, "room_name": room.name}
+
+
+@router.post("/{room_id}/complete")
+def complete_room(
+    room_id: str,
+    user: UserRow = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    room = db.query(RoomRow).filter(RoomRow.id == room_id).first()
+    if not room or room.professor_id != user.id:
+        raise HTTPException(403, "Not your room")
+    if room.completed:
+        raise HTTPException(400, "Room already completed")
+    room.completed = True
+    db.commit()
+    db.refresh(room)
+    return _room_response(room, db)

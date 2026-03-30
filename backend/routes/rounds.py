@@ -46,6 +46,8 @@ def create_round(
     room = db.query(RoomRow).filter(RoomRow.id == body.room_id).first()
     if not room or room.professor_id != user.id:
         raise HTTPException(403, "Not your room")
+    if room.completed:
+        raise HTTPException(400, "This class is completed; no more rounds can be created")
 
     existing_count = db.query(RoundRow).filter(RoundRow.room_id == body.room_id).count()
     deadline_dt = datetime.fromisoformat(body.deadline)
@@ -139,6 +141,9 @@ def activate_round(
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
         raise HTTPException(403, "Not your room")
+
+    if room.completed:
+        raise HTTPException(400, "This class is completed")
 
     if rnd.status != "draft":
         raise HTTPException(400, f"Round is already {rnd.status}")

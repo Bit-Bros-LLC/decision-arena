@@ -51,7 +51,7 @@ export default function Dashboard() {
     setCreating(true);
     try {
       const room = await api.createRoom(roomName.trim());
-      setLastCreated({ invite_code: room.invite_code, name: room.name });
+      setLastCreated({ name: room.name });
       setRoomName('');
       setShowCreateForm(false);
       await loadRooms();
@@ -87,9 +87,8 @@ export default function Dashboard() {
           <div className="rounded-xl border-2 border-amber-500/60 bg-slate-800 p-6 shadow-lg">
             <p className="text-sm font-medium text-amber-400">Room created</p>
             <p className="mt-1 text-lg text-slate-200">{lastCreated.name}</p>
-            <p className="mt-4 text-xs uppercase tracking-wider text-slate-400">Invite code</p>
-            <p className="mt-1 font-mono text-3xl font-bold tracking-widest text-amber-400">
-              {lastCreated.invite_code}
+            <p className="mt-3 text-sm text-slate-400">
+              Open the room to see the invite code and manage rounds.
             </p>
             <button
               type="button"
@@ -215,11 +214,20 @@ export default function Dashboard() {
                       {room.member_count} member{room.member_count !== 1 ? 's' : ''}
                     </span>
                   </div>
-                  {user.user_id === room.professor_id && (
-                    <p className="mt-2 font-mono text-sm text-amber-400">
-                      Invite: {room.invite_code}
-                    </p>
-                  )}
+                  <p className="mt-2 text-sm text-slate-400">
+                    <span className="text-slate-500">Status: </span>
+                    <span
+                      className={
+                        room.round_display === 'Complete'
+                          ? 'text-emerald-400'
+                          : room.round_display?.startsWith('Round ')
+                            ? 'text-amber-400'
+                            : 'text-slate-300'
+                      }
+                    >
+                      {room.round_display ?? '—'}
+                    </span>
+                  </p>
                 </button>
               </li>
             ))}
