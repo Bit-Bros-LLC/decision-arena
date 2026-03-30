@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Boolean,
     Text,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -62,6 +63,7 @@ class UserRow(Base):
     created_at = Column(DateTime, default=_now)
 
     policies = relationship("PolicyRow", back_populates="user")
+    policy_presets = relationship("PolicyPresetRow", back_populates="user")
 
 
 class RoomRow(Base):
@@ -120,6 +122,23 @@ class PolicyRow(Base):
 
     user = relationship("UserRow", back_populates="policies")
     round = relationship("RoundRow")
+
+
+class PolicyPresetRow(Base):
+    """User-saved policy configuration for reuse across rounds."""
+
+    __tablename__ = "policy_presets"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_policy_preset_user_name"),)
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    policy_type = Column(String, nullable=False)
+    config = Column(JsonColumn, nullable=False)
+    created_at = Column(DateTime, default=_now)
+    updated_at = Column(DateTime, default=_now, onupdate=_now)
+
+    user = relationship("UserRow", back_populates="policy_presets")
 
 
 class ResultRow(Base):

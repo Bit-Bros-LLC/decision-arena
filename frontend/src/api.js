@@ -65,6 +65,10 @@ export const api = {
 
   savePolicy: (body) => request('/policies', { method: 'PUT', body: JSON.stringify(body) }),
   getMyPolicy: (roundId) => request(`/policies/${roundId}`),
+  listPolicyPresets: () => request('/policy-presets'),
+  savePolicyPreset: (body) =>
+    request('/policy-presets', { method: 'POST', body: JSON.stringify(body) }),
+  deletePolicyPreset: (presetId) => request(`/policy-presets/${presetId}`, { method: 'DELETE' }),
   backtest: (body) => request('/policies/backtest', { method: 'POST', body: JSON.stringify(body) }),
 
   getMyResults: (roundId) => request(`/results/${roundId}`),
