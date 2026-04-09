@@ -141,6 +141,19 @@ class PolicyPresetRow(Base):
     user = relationship("UserRow", back_populates="policy_presets")
 
 
+class LessonProgressRow(Base):
+    __tablename__ = "lesson_progress"
+    __table_args__ = (UniqueConstraint("user_id", "lesson_slug", name="uq_lesson_progress_user_slug"),)
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    lesson_slug = Column(String, nullable=False)
+    completed = Column(Boolean, nullable=False, default=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    user = relationship("UserRow")
+
+
 class ResultRow(Base):
     __tablename__ = "results"
 
