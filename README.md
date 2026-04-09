@@ -13,14 +13,20 @@ A competitive inventory simulation game where students design operating policies
 
 ## Learn Section
 
-An interactive lesson module that teaches the concepts behind the game. Students work through bite-sized lessons at their own pace, each with reading content and a hands-on interactive element.
+An interactive lesson module (currently in **beta**) that teaches the concepts behind the game. Students work through bite-sized lessons at their own pace, each with reading content and a hands-on interactive element.
 
-| Lesson | What Students Learn | Interactive Element |
-|--------|--------------------|--------------------|
-| **Why Point Forecasts Fail** | Single-number predictions hide uncertainty | Reveal 8 demand scenarios behind a "perfect" forecast; pick an order qty and see stockout vs. waste rates |
-| **Probabilistic Forecasting** | Distributions, quantiles, confidence intervals | Drag sliders for mean/std dev; watch P10/P50/P90 quantile markers shift on a live bell curve |
-| **Economics of Decisions** | Cost asymmetry, the newsvendor critical ratio | Adjust overstocking/understocking costs; see the optimal order point shift on the distribution |
-| **Safety Stock** | Service levels, the z-score formula, diminishing returns | Slide target service level from 50%–99.9%; watch safety stock climb exponentially |
+| # | Lesson | What Students Learn | Interactive Element |
+|---|--------|--------------------|--------------------|
+| 1 | **Why Point Forecasts Fail** | Single-number predictions hide uncertainty | Reveal 8 demand scenarios behind a "perfect" forecast; pick an order qty and see stockout vs. waste rates |
+| 2 | **Probabilistic Forecasting** | Distributions, quantiles, confidence intervals | Drag sliders for mean/std dev; watch P10/P50/P90 quantile markers shift on a live bell curve |
+| 3 | **Economics of Decisions** | Cost asymmetry, the newsvendor critical ratio | Adjust overstocking/understocking costs; see the optimal order point shift on the distribution |
+| 4 | **Safety Stock** | Service levels, the z-score formula, diminishing returns | Slide target service level from 50%–99.9%; watch safety stock climb exponentially |
+| 5 | **Demand Patterns** | Trend, seasonality, intermittence, and true uncertainty | Mix trend/seasonality/noise with sliders; toggle decomposition overlays to reveal hidden structure |
+| 6 | **Lead Time Variability** | How supplier unreliability compounds demand uncertainty | Dual sliders show "demand only" vs "combined" uncertainty distributions expanding in real-time |
+| 7 | **The Bullwhip Effect** | Small demand signals amplify into upstream chaos | Multi-tier supply chain with reaction multiplier; watch order swings explode upstream |
+| 8 | **The Newsvendor Problem** | The classic one-shot ordering problem, done with distributions | Full expected cost curve with optimal Q*; 100-day race of newsvendor vs. point-forecast ordering |
+| 9 | **Why Simulate?** | Monte Carlo thinking and when formulas aren't enough | Progressive histogram builder — click +1/+10/+100/+1000 sims and watch outcomes materialize |
+| 10 | **Forecast Evaluation** | Why chasing MAPE can destroy your P&L | Two forecasters compete: the "accurate" one loses money due to bias; toggle cost asymmetry to see why |
 
 Progress is persisted per-user in the database. Adding a new lesson requires only a component file and one registry entry.
 
@@ -170,7 +176,7 @@ decision-arena/
 
 ## Future Plans
 
-- Additional Learn lessons (demand modeling, lead time variability, multi-echelon)
+- Additional Learn lessons (multi-echelon inventory, demand modeling, EOQ)
 - Code policies (Monaco editor + sandboxed Python execution)
 - Auto-generated scenarios from probability distributions
 - Daily drip reveal of actuals throughout the round
