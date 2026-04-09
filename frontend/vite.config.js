@@ -9,6 +9,7 @@ export default defineConfig({
       '/rooms': 'http://localhost:8000',
       '/rounds': 'http://localhost:8000',
       '/policies': 'http://localhost:8000',
+      '/policy-presets': 'http://localhost:8000',
       '/results': 'http://localhost:8000',
       '/leaderboard': 'http://localhost:8000',
     },

@@ -11,8 +11,10 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   Cell,
+  ReferenceLine,
 } from 'recharts';
 import { api, getUser } from '../api';
+import { UITooltip } from '../components/UITooltip';
 
 const TEMPLATES = [
   {
@@ -32,8 +34,81 @@ const TEMPLATES = [
   },
 ];
 
-const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99];
+const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99, 0.99999];
 const INSURANCE_MODES = ['never', 'always', 'conditional'];
+
+const INSURANCE_HELP =
+  'Each day you decide whether to buy supply-chain insurance. If insured, you pay the daily insurance premium (see cost parameters below) and black swan damage is reduced by your coverage percentage. Never: never buy insurance. Always: buy insurance every day. Conditional: buy insurance when on-hand inventory is below 30% of the average demand over the last 7 days.';
+
+const COST_TOOLTIPS = {
+  'Holding / unit':
+    'Cost charged per unit held in inventory at the end of each day.',
+  'Stockout penalty': 'Cost per unit of demand you cannot fulfill (lost sale / penalty).',
+  'Ordering (fixed)': 'Flat fee added every time you place an order, regardless of size.',
+  'Per-unit cost': 'Purchase or procurement cost for each unit you order.',
+  'Selling price': 'Revenue received for each unit of demand you fulfill.',
+  'Insurance premium': 'Cost you pay each day you choose to buy insurance.',
+  'Insurance coverage':
+    'Share of black swan damage covered by insurance when you are insured (remainder is out-of-pocket).',
+};
+
+function formatProfitAxisTick(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  if (Math.abs(n) >= 100_000) return `$${(n / 1000).toFixed(0)}k`;
+  if (Math.abs(n) >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  if (Math.abs(n) >= 100) return `$${n.toFixed(0)}`;
+  return `$${n.toFixed(0)}`;
+}
+
+function computeProfitDomain(values) {
+  const v = values.filter((x) => Number.isFinite(x));
+  if (!v.length) return undefined;
+  const sorted = [...v].sort((a, b) => a - b);
+  const n = sorted.length;
+  const min = sorted[0];
+  const max = sorted[n - 1];
+  if (min === max) return [min - 1, max + 1];
+
+  const spanFull = max - min;
+  const iLo = Math.floor((n - 1) * 0.05);
+  const iHi = Math.ceil((n - 1) * 0.95);
+  const q05 = sorted[iLo];
+  const q95 = sorted[iHi];
+  const spanQ = q95 - q05;
+
+  // Few extreme days dominate → fit axis to bulk of days so the series is readable
+  if (n >= 20 && spanQ > 0 && spanFull > spanQ * 6) {
+    const pad = Math.max(spanQ * 0.08, 1);
+    return [q05 - pad, q95 + pad];
+  }
+
+  const pad = Math.max(spanFull * 0.06, 1);
+  return [min - pad, max + pad];
+}
+
+/** Green for non-negative daily profit, red for losses (single shape fn — no per-bar Cell list). */
+function ProfitBarShape(props) {
+  const { x, y, width, height, payload } = props;
+  const profit = Number(payload?.daily_profit);
+  const fill = Number.isFinite(profit) && profit >= 0 ? '#22c55e' : '#ef4444';
+  const w = Number(width);
+  const hRaw = Number(height);
+  if (!Number.isFinite(w) || !Number.isFinite(hRaw) || w <= 0 || hRaw === 0) return null;
+  // Recharts uses negative height for bars below the zero line; SVG <rect> needs positive height + top y
+  const heightRect = Math.abs(hRaw);
+  const yRect = hRaw < 0 ? y + hRaw : y;
+  return <rect x={x} y={yRect} width={w} height={heightRect} fill={fill} rx={2} ry={2} />;
+}
+
+function formatServiceLevelOption(o) {
+  const n = Number(o);
+  const pct = n * 100;
+  if (Number.isFinite(pct) && Math.abs(pct - Math.round(pct)) < 1e-9) {
+    return `${Math.round(pct)}%`;
+  }
+  return `${pct.toFixed(3)}%`;
+}
 
 function mean(arr) {
   if (!arr.length) return 0;
@@ -85,6 +160,27 @@ export default function PolicyEditor() {
   const [submitMsg, setSubmitMsg] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [submitLoading, setSubmitLoading] = useState(false);
+
+  const [policyPresets, setPolicyPresets] = useState([]);
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [libraryName, setLibraryName] = useState('');
+  const [libraryMsg, setLibraryMsg] = useState('');
+  const [libraryError, setLibraryError] = useState('');
+  const [libraryLoading, setLibraryLoading] = useState(false);
+
+  const refreshPresets = useCallback(async () => {
+    if (!user) return;
+    try {
+      const list = await api.listPolicyPresets();
+      setPolicyPresets(Array.isArray(list) ? list : []);
+    } catch {
+      setPolicyPresets([]);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    refreshPresets();
+  }, [refreshPresets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,9 +255,71 @@ export default function PolicyEditor() {
   const onTemplateChange = (id) => {
     setPolicyType(id);
     setConfig(defaultConfig(id));
+    setSelectedPresetId('');
     setBacktestResult(null);
     setBacktestError(null);
   };
+
+  const applyPreset = useCallback((preset) => {
+    setPolicyType(preset.policy_type);
+    setConfig({ ...defaultConfig(preset.policy_type), ...preset.config });
+    setSelectedPresetId(preset.id);
+    setBacktestResult(null);
+    setBacktestError(null);
+  }, []);
+
+  const handleLoadPresetSelect = (e) => {
+    const id = e.target.value;
+    setSelectedPresetId(id);
+    if (!id) return;
+    const preset = policyPresets.find((p) => p.id === id);
+    if (preset) applyPreset(preset);
+  };
+
+  const handleSaveToLibrary = async (e) => {
+    e.preventDefault();
+    setLibraryMsg('');
+    setLibraryError('');
+    const name = libraryName.trim();
+    if (!name) {
+      setLibraryError('Enter a name for this preset.');
+      return;
+    }
+    if (!user) return;
+    setLibraryLoading(true);
+    try {
+      const res = await api.savePolicyPreset({
+        name,
+        policy_type: policyType,
+        config,
+      });
+      setLibraryMsg(res?.message || 'Saved.');
+      setLibraryName('');
+      await refreshPresets();
+      if (res?.id) setSelectedPresetId(res.id);
+    } catch (err) {
+      setLibraryError(err.message || 'Could not save preset');
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  const handleDeletePreset = async () => {
+    if (!selectedPresetId) return;
+    if (!window.confirm('Delete this saved policy from your library?')) return;
+    setLibraryMsg('');
+    setLibraryError('');
+    try {
+      await api.deletePolicyPreset(selectedPresetId);
+      setSelectedPresetId('');
+      await refreshPresets();
+      setLibraryMsg('Preset removed.');
+    } catch (err) {
+      setLibraryError(err.message || 'Could not delete');
+    }
+  };
+
+  const templateShortLabel = (id) => TEMPLATES.find((t) => t.id === id)?.label ?? id;
 
   const runBacktest = async () => {
     setBacktestError(null);
@@ -199,13 +357,18 @@ export default function PolicyEditor() {
     }
   };
 
-  const barProfitData = useMemo(() => {
+  const backtestProfitSeries = useMemo(() => {
     if (!backtestResult?.daily_log?.length) return [];
     return backtestResult.daily_log.map((d) => ({
       day: d.day,
-      daily_profit: d.daily_profit,
+      daily_profit: Number(d.daily_profit),
     }));
   }, [backtestResult]);
+
+  const backtestProfitDomain = useMemo(
+    () => computeProfitDomain(backtestProfitSeries.map((d) => d.daily_profit)),
+    [backtestProfitSeries],
+  );
 
   if (loadError) {
     return (
@@ -306,16 +469,17 @@ export default function PolicyEditor() {
 
           <h3 className="mt-4 text-xs font-medium text-slate-400">Cost parameters</h3>
           <ul className="mt-2 space-y-1 text-sm text-slate-300">
-            <CostRow label="Holding / unit" v={costs.holding_per_unit} />
-            <CostRow label="Stockout penalty" v={costs.stockout_penalty} />
-            <CostRow label="Ordering (fixed)" v={costs.ordering_fixed} />
-            <CostRow label="Per-unit cost" v={costs.per_unit_cost} />
-            <CostRow label="Selling price" v={costs.selling_price} />
-            <CostRow label="Insurance premium" v={costs.insurance_premium} />
+            <CostRow label="Holding / unit" v={costs.holding_per_unit} tooltip={COST_TOOLTIPS['Holding / unit']} />
+            <CostRow label="Stockout penalty" v={costs.stockout_penalty} tooltip={COST_TOOLTIPS['Stockout penalty']} />
+            <CostRow label="Ordering (fixed)" v={costs.ordering_fixed} tooltip={COST_TOOLTIPS['Ordering (fixed)']} />
+            <CostRow label="Per-unit cost" v={costs.per_unit_cost} tooltip={COST_TOOLTIPS['Per-unit cost']} />
+            <CostRow label="Selling price" v={costs.selling_price} tooltip={COST_TOOLTIPS['Selling price']} />
+            <CostRow label="Insurance premium" v={costs.insurance_premium} tooltip={COST_TOOLTIPS['Insurance premium']} />
             {costs.insurance_coverage_pct != null && (
               <CostRow
                 label="Insurance coverage"
                 v={`${(Number(costs.insurance_coverage_pct) * 100).toFixed(0)}%`}
+                tooltip={COST_TOOLTIPS['Insurance coverage']}
               />
             )}
           </ul>
@@ -328,6 +492,81 @@ export default function PolicyEditor() {
           </h2>
           {!policyLoaded && (
             <p className="mb-2 text-xs text-slate-500">Loading your saved policy…</p>
+          )}
+          {user && (
+            <div className="mb-4 rounded-lg border border-slate-600 bg-slate-900/50 p-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Policy library
+              </h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Save your current settings to reuse on another round. Loading a preset replaces the
+                form below (does not submit to this round).
+              </p>
+              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <div className="min-w-0 flex-1 sm:min-w-[200px]">
+                  <label htmlFor="preset-load" className="block text-xs text-slate-400">
+                    Load preset
+                  </label>
+                  <select
+                    id="preset-load"
+                    value={selectedPresetId}
+                    onChange={handleLoadPresetSelect}
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="">— choose a saved policy —</option>
+                    {policyPresets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({templateShortLabel(p.policy_type)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <form
+                  onSubmit={handleSaveToLibrary}
+                  className="flex min-w-0 flex-1 flex-wrap items-end gap-2 sm:flex-[2]"
+                >
+                  <div className="min-w-0 flex-1">
+                    <label htmlFor="preset-name" className="block text-xs text-slate-400">
+                      Save current as
+                    </label>
+                    <input
+                      id="preset-name"
+                      type="text"
+                      value={libraryName}
+                      onChange={(e) => setLibraryName(e.target.value)}
+                      placeholder="e.g. Aggressive Q1"
+                      maxLength={120}
+                      className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={libraryLoading}
+                    className="rounded-lg border border-amber-500/60 bg-transparent px-3 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/10 disabled:opacity-50"
+                  >
+                    {libraryLoading ? 'Saving…' : 'Save to library'}
+                  </button>
+                </form>
+                <button
+                  type="button"
+                  onClick={handleDeletePreset}
+                  disabled={!selectedPresetId}
+                  className="rounded-lg border border-red-500/40 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Delete selected
+                </button>
+              </div>
+              {libraryError && (
+                <p className="mt-2 text-xs text-red-400" role="alert">
+                  {libraryError}
+                </p>
+              )}
+              {libraryMsg && (
+                <p className="mt-2 text-xs text-emerald-400" role="status">
+                  {libraryMsg}
+                </p>
+              )}
+            </div>
           )}
           <div className="grid gap-3 sm:grid-cols-3">
             {TEMPLATES.map((t) => (
@@ -360,7 +599,7 @@ export default function PolicyEditor() {
                 <RangeField
                   label="Target level (S)"
                   min={50}
-                  max={500}
+                  max={2000}
                   step={10}
                   value={config.target_level ?? 200}
                   onChange={(v) => updateConfig({ target_level: v })}
@@ -368,6 +607,7 @@ export default function PolicyEditor() {
                 />
                 <SelectField
                   label="Insurance mode"
+                  helpText={INSURANCE_HELP}
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
@@ -381,14 +621,14 @@ export default function PolicyEditor() {
                   label="Target service level"
                   value={String(config.target_service_level ?? 0.95)}
                   options={SERVICE_LEVELS.map(String)}
-                  formatOption={(o) => `${(Number(o) * 100).toFixed(0)}%`}
+                  formatOption={formatServiceLevelOption}
                   onChange={(v) => updateConfig({ target_service_level: Number(v) })}
                   disabled={!canEdit}
                 />
                 <RangeField
                   label="Lookback days"
                   min={7}
-                  max={30}
+                  max={180}
                   step={1}
                   value={config.lookback_days ?? 14}
                   onChange={(v) => updateConfig({ lookback_days: v })}
@@ -396,6 +636,7 @@ export default function PolicyEditor() {
                 />
                 <SelectField
                   label="Insurance mode"
+                  helpText={INSURANCE_HELP}
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
@@ -408,7 +649,7 @@ export default function PolicyEditor() {
                 <RangeField
                   label="Reorder point (s)"
                   min={20}
-                  max={300}
+                  max={2000}
                   step={5}
                   value={config.reorder_point ?? 120}
                   onChange={(v) => updateConfig({ reorder_point: v })}
@@ -417,7 +658,7 @@ export default function PolicyEditor() {
                 <RangeField
                   label="Order quantity (Q)"
                   min={50}
-                  max={400}
+                  max={2000}
                   step={10}
                   value={config.order_quantity ?? 150}
                   onChange={(v) => updateConfig({ order_quantity: v })}
@@ -425,6 +666,7 @@ export default function PolicyEditor() {
                 />
                 <SelectField
                   label="Insurance mode"
+                  helpText={INSURANCE_HELP}
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
@@ -500,25 +742,43 @@ export default function PolicyEditor() {
 
               <div className="mt-4 h-56 w-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={barProfitData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                  <BarChart
+                    data={backtestProfitSeries}
+                    margin={{ top: 8, right: 12, left: 4, bottom: 4 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} />
-                    <YAxis stroke="#94a3b8" fontSize={11} />
+                    <XAxis dataKey="day" stroke="#94a3b8" fontSize={11} tick={{ fontSize: 10 }} />
+                    <YAxis
+                      stroke="#94a3b8"
+                      fontSize={11}
+                      domain={backtestProfitDomain}
+                      tickFormatter={formatProfitAxisTick}
+                      width={56}
+                    />
                     <Tooltip
                       contentStyle={{
                         backgroundColor: '#1e293b',
                         border: '1px solid #475569',
                         borderRadius: '8px',
                       }}
+                      formatter={(value) => [
+                        typeof value === 'number'
+                          ? `$${value.toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}`
+                          : value,
+                        'Daily profit',
+                      ]}
+                      labelFormatter={(day) => `Day ${day}`}
                     />
-                    <Bar dataKey="daily_profit" radius={[2, 2, 0, 0]}>
-                      {barProfitData.map((entry) => (
-                        <Cell
-                          key={entry.day}
-                          fill={entry.daily_profit >= 0 ? '#22c55e' : '#ef4444'}
-                        />
-                      ))}
-                    </Bar>
+                    <ReferenceLine y={0} stroke="#64748b" strokeDasharray="4 4" />
+                    <Bar
+                      dataKey="daily_profit"
+                      shape={ProfitBarShape}
+                      maxBarSize={10}
+                      isAnimationActive={false}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -548,13 +808,20 @@ function Stat({ label, value }) {
   );
 }
 
-function CostRow({ label, v }) {
+function CostRow({ label, v, tooltip }) {
   if (v === undefined || v === null) return null;
   const display = typeof v === 'number' ? v.toLocaleString() : String(v);
   return (
-    <li className="flex justify-between gap-2">
-      <span className="text-slate-400">{label}</span>
-      <span className="font-mono text-slate-200">{display}</span>
+    <li>
+      <UITooltip content={tooltip} placement="bottom" fullWidth>
+        <div
+          tabIndex={0}
+          className="flex cursor-help justify-between gap-2 rounded-md px-0.5 py-0.5 outline-none ring-amber-500/0 transition hover:bg-slate-900/50 focus-visible:ring-2 focus-visible:ring-amber-500/40"
+        >
+          <span className="text-slate-400">{label}</span>
+          <span className="font-mono text-slate-200">{display}</span>
+        </div>
+      </UITooltip>
     </li>
   );
 }
@@ -580,8 +847,23 @@ function RangeField({ label, min, max, step, value, onChange, disabled }) {
   );
 }
 
+function HelpHint({ text }) {
+  return (
+    <UITooltip content={text} placement="top">
+      <button
+        type="button"
+        className="ml-0.5 inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-500 text-[10px] font-semibold leading-none text-slate-400 hover:border-amber-500/60 hover:text-amber-400"
+        aria-label="How insurance works"
+      >
+        ?
+      </button>
+    </UITooltip>
+  );
+}
+
 function SelectField({
   label,
+  helpText,
   value,
   options,
   onChange,
@@ -590,7 +872,10 @@ function SelectField({
 }) {
   return (
     <div>
-      <label className="block text-sm text-slate-300">{label}</label>
+      <div className="flex items-center gap-1">
+        <label className="text-sm text-slate-300">{label}</label>
+        {helpText ? <HelpHint text={helpText} /> : null}
+      </div>
       <select
         value={value}
         disabled={disabled}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, Link } from 'react-router-dom';
 import { api, getUser } from '../api';
 
 function formatDeadline(iso) {
@@ -16,7 +16,6 @@ function formatDeadline(iso) {
 
 export default function RoomView() {
   const { roomId } = useParams();
-  const navigate = useNavigate();
   const user = getUser();
   const isProfessor = user?.role === 'professor';
 
@@ -28,6 +27,8 @@ export default function RoomView() {
   const [scoringId, setScoringId] = useState(null);
   const [activatingId, setActivatingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [showEndClassConfirm, setShowEndClassConfirm] = useState(false);
+  const [endingClass, setEndingClass] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
@@ -88,6 +89,19 @@ export default function RoomView() {
     }
   };
 
+  const handleEndClass = async () => {
+    setEndingClass(true);
+    try {
+      await api.completeRoom(roomId);
+      setShowEndClassConfirm(false);
+      await load();
+    } catch (e) {
+      setError(e.message || 'Could not end class');
+    } finally {
+      setEndingClass(false);
+    }
+  };
+
   const handleDeleteRound = async (roundId) => {
     if (!window.confirm('Delete this round? All policies and results will be lost.')) return;
     setDeletingId(roundId);
@@ -117,14 +131,58 @@ export default function RoomView() {
     );
   }
 
+  const roomComplete = Boolean(room.completed);
+
   return (
     <div className="space-y-6">
+      {showEndClassConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="end-class-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-slate-600 bg-slate-800 p-6 shadow-xl">
+            <h2 id="end-class-title" className="text-lg font-semibold text-slate-100">
+              End class
+            </h2>
+            <p className="mt-3 text-sm text-slate-300">
+              Are you sure you want to complete the class? No more rounds will be allowed to be
+              created.
+            </p>
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                disabled={endingClass}
+                onClick={() => setShowEndClassConfirm(false)}
+                className="rounded-lg border border-slate-600 px-4 py-2 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={endingClass}
+                onClick={handleEndClass}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {endingClass ? 'Ending…' : 'Complete class'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
           {room.name}
         </h1>
         <p className="mt-1 text-sm text-slate-400">
           {room.member_count} member{room.member_count === 1 ? '' : 's'}
+          {roomComplete && (
+            <span className="ml-2 rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-medium text-emerald-400">
+              Class complete
+            </span>
+          )}
         </p>
       </div>
 
@@ -164,13 +222,25 @@ export default function RoomView() {
           >
             Season leaderboard
           </Link>
-          {isProfessor && (
+          {isProfessor && !roomComplete && (
             <Link
               to={`/room/${roomId}/create-round`}
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400"
             >
               Create Round
             </Link>
+          )}
+          {isProfessor && !roomComplete && (
+            <button
+              type="button"
+              onClick={() => {
+                setError(null);
+                setShowEndClassConfirm(true);
+              }}
+              className="rounded-lg border border-red-500/50 px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-red-500/10"
+            >
+              End class
+            </button>
           )}
         </div>
 

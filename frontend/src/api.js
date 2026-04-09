@@ -54,6 +54,7 @@ export const api = {
   getRooms: () => request('/rooms'),
   createRoom: (name) => request('/rooms', { method: 'POST', body: JSON.stringify({ name }) }),
   joinRoom: (roomId, invite_code) => request(`/rooms/${roomId}/join`, { method: 'POST', body: JSON.stringify({ invite_code }) }),
+  completeRoom: (roomId) => request(`/rooms/${roomId}/complete`, { method: 'POST' }),
 
   getRound: (roundId) => request(`/rounds/${roundId}`),
   getRoomRounds: (roomId) => request(`/rounds/room/${roomId}`),
@@ -64,6 +65,10 @@ export const api = {
 
   savePolicy: (body) => request('/policies', { method: 'PUT', body: JSON.stringify(body) }),
   getMyPolicy: (roundId) => request(`/policies/${roundId}`),
+  listPolicyPresets: () => request('/policy-presets'),
+  savePolicyPreset: (body) =>
+    request('/policy-presets', { method: 'POST', body: JSON.stringify(body) }),
+  deletePolicyPreset: (presetId) => request(`/policy-presets/${presetId}`, { method: 'DELETE' }),
   backtest: (body) => request('/policies/backtest', { method: 'POST', body: JSON.stringify(body) }),
 
   getMyResults: (roundId) => request(`/results/${roundId}`),

@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Boolean,
     Text,
+    UniqueConstraint,
     create_engine,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -62,6 +63,7 @@ class UserRow(Base):
     created_at = Column(DateTime, default=_now)
 
     policies = relationship("PolicyRow", back_populates="user")
+    policy_presets = relationship("PolicyPresetRow", back_populates="user")
 
 
 class RoomRow(Base):
@@ -71,6 +73,7 @@ class RoomRow(Base):
     name = Column(String, nullable=False)
     invite_code = Column(String, unique=True, nullable=False, index=True)
     professor_id = Column(String, ForeignKey("users.id"), nullable=False)
+    completed = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=_now)
 
     professor = relationship("UserRow")
@@ -121,6 +124,23 @@ class PolicyRow(Base):
     round = relationship("RoundRow")
 
 
+class PolicyPresetRow(Base):
+    """User-saved policy configuration for reuse across rounds."""
+
+    __tablename__ = "policy_presets"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_policy_preset_user_name"),)
+
+    id = Column(String, primary_key=True, default=_uuid)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(120), nullable=False)
+    policy_type = Column(String, nullable=False)
+    config = Column(JsonColumn, nullable=False)
+    created_at = Column(DateTime, default=_now)
+    updated_at = Column(DateTime, default=_now, onupdate=_now)
+
+    user = relationship("UserRow", back_populates="policy_presets")
+
+
 class ResultRow(Base):
     __tablename__ = "results"
 
@@ -147,6 +167,26 @@ class ResultRow(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
+
+
+def _migrate_schema():
+    """Add columns missing from older SQLite/Postgres DBs."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    if not insp.has_table("rooms"):
+        return
+    cols = {c["name"] for c in insp.get_columns("rooms")}
+    if "completed" in cols:
+        return
+    with engine.begin() as conn:
+        if DATABASE_URL.startswith("sqlite"):
+            conn.execute(text("ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT 0"))
+        else:
+            conn.execute(
+                text("ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT FALSE")
+            )
 
 
 def get_db():

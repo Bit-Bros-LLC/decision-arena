@@ -87,6 +87,10 @@ export default function Admin() {
         const rooms = await api.getRooms();
         if (cancelled) return;
         const found = rooms.find((r) => r.id === roomId);
+        if (found?.completed) {
+          navigate(`/room/${roomId}`, { replace: true });
+          return;
+        }
         setRoomLabel(found?.name ?? roomId);
       } catch {
         if (!cancelled) setRoomLabel(roomId);
@@ -95,7 +99,7 @@ export default function Admin() {
     return () => {
       cancelled = true;
     };
-  }, [roomId]);
+  }, [roomId, navigate]);
 
   const copyClaudePrompt = async () => {
     try {
