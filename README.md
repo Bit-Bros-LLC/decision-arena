@@ -11,6 +11,19 @@ A competitive inventory simulation game where students design operating policies
 5. **Results reveal** day-by-day breakdowns, key moments, and a leaderboard
 6. **Repeat** — cumulative profit across all rounds determines the season winner
 
+## Learn Section
+
+An interactive lesson module that teaches the concepts behind the game. Students work through bite-sized lessons at their own pace, each with reading content and a hands-on interactive element.
+
+| Lesson | What Students Learn | Interactive Element |
+|--------|--------------------|--------------------|
+| **Why Point Forecasts Fail** | Single-number predictions hide uncertainty | Reveal 8 demand scenarios behind a "perfect" forecast; pick an order qty and see stockout vs. waste rates |
+| **Probabilistic Forecasting** | Distributions, quantiles, confidence intervals | Drag sliders for mean/std dev; watch P10/P50/P90 quantile markers shift on a live bell curve |
+| **Economics of Decisions** | Cost asymmetry, the newsvendor critical ratio | Adjust overstocking/understocking costs; see the optimal order point shift on the distribution |
+| **Safety Stock** | Service levels, the z-score formula, diminishing returns | Slide target service level from 50%–99.9%; watch safety stock climb exponentially |
+
+Progress is persisted per-user in the database. Adding a new lesson requires only a component file and one registry entry.
+
 ## The Game
 
 Students manage a virtual factory's inventory. Each simulated day:
@@ -85,13 +98,14 @@ decision-arena/
   backend/
     main.py                 FastAPI app entry point
     auth.py                 JWT authentication
-    database.py             SQLAlchemy models (users, rooms, rounds, policies, results)
+    database.py             SQLAlchemy models (users, rooms, rounds, policies, results, lesson_progress)
     routes/
       auth_routes.py        POST /auth/register, /auth/login
       rooms.py              Room CRUD + join
       rounds.py             Round CRUD + scoring engine
       policies.py           Policy save + backtest
       results.py            Results + leaderboard queries
+      lessons.py            Lesson progress tracking
     simulation/
       engine.py             Core simulation: run_simulation()
       policies.py           UI policy template executors
@@ -107,6 +121,13 @@ decision-arena/
         RoundResults.jsx    Post-scoring day-by-day breakdown
         Leaderboard.jsx     Round + season standings
         Admin.jsx           Professor: create rounds with scenario data
+        LearnHub.jsx        Lesson grid with progress tracking
+        LessonPage.jsx      Slug-based lesson router
+        lessons/            Interactive lesson components (one per lesson)
+      components/
+        LessonLayout.jsx    Shared lesson wrapper (sections, nav, completion)
+      data/
+        lessons.js          Lesson registry (add new lessons here)
       api.js                API client
       App.jsx               Router
 ```
@@ -130,6 +151,9 @@ decision-arena/
 | GET | `/results/{roundId}` | My results for a round |
 | GET | `/leaderboard/{roundId}` | Round leaderboard |
 | GET | `/leaderboard/season/{roomId}` | Cumulative season standings |
+| GET | `/lessons/progress` | Get lesson completion status |
+| POST | `/lessons/{slug}/complete` | Mark a lesson as completed |
+| POST | `/lessons/{slug}/reset` | Reset lesson progress |
 
 ## Deployment
 
@@ -146,6 +170,7 @@ decision-arena/
 
 ## Future Plans
 
+- Additional Learn lessons (demand modeling, lead time variability, multi-echelon)
 - Code policies (Monaco editor + sandboxed Python execution)
 - Auto-generated scenarios from probability distributions
 - Daily drip reveal of actuals throughout the round
