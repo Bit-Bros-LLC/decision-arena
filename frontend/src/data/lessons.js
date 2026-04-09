@@ -41,6 +41,66 @@ const lessons = [
     estimatedMinutes: 6,
     component: lazy(() => import('../pages/lessons/SafetyStock')),
   },
+  {
+    slug: 'demand-patterns',
+    title: 'Demand Patterns',
+    description:
+      'Not all demand looks the same. Learn to spot trend, seasonality, and intermittence — and why the residual noise is the true uncertainty.',
+    order: 5,
+    icon: '🔍',
+    estimatedMinutes: 7,
+    component: lazy(() => import('../pages/lessons/DemandPatterns')),
+  },
+  {
+    slug: 'lead-time-variability',
+    title: 'Lead Time Variability',
+    description:
+      'Demand uncertainty is only half the story. When your supplier is also unpredictable, the uncertainty multiplies.',
+    order: 6,
+    icon: '⏳',
+    estimatedMinutes: 7,
+    component: lazy(() => import('../pages/lessons/LeadTimeVariability')),
+  },
+  {
+    slug: 'bullwhip-effect',
+    title: 'The Bullwhip Effect',
+    description:
+      'A 5% demand bump at retail becomes a 40% order spike at the factory. Watch small signals amplify into chaos.',
+    order: 7,
+    icon: '🌊',
+    estimatedMinutes: 7,
+    component: lazy(() => import('../pages/lessons/BullwhipEffect')),
+  },
+  {
+    slug: 'newsvendor-problem',
+    title: 'The Newsvendor Problem',
+    description:
+      'The classic one-shot ordering problem — done right with a full distribution, not a point forecast.',
+    order: 8,
+    icon: '📰',
+    estimatedMinutes: 8,
+    component: lazy(() => import('../pages/lessons/NewsvendorProblem')),
+  },
+  {
+    slug: 'why-simulate',
+    title: 'Why Simulate?',
+    description:
+      'When formulas hit their limits, let the computer play it out a thousand times. Monte Carlo thinking for the real world.',
+    order: 9,
+    icon: '🎲',
+    estimatedMinutes: 7,
+    component: lazy(() => import('../pages/lessons/WhySimulate')),
+  },
+  {
+    slug: 'forecast-evaluation',
+    title: 'Forecast Evaluation',
+    description:
+      'Metrics are tools, not goals. Learn why chasing MAPE can destroy your P&L — and what to measure instead.',
+    order: 10,
+    icon: '📏',
+    estimatedMinutes: 8,
+    component: lazy(() => import('../pages/lessons/ForecastEvaluation')),
+  },
 ];
 
 export default lessons;

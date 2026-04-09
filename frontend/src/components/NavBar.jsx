@@ -29,13 +29,16 @@ export default function NavBar() {
         </button>
         <button
           onClick={() => navigate('/learn')}
-          className={`text-sm font-medium transition-colors ${
+          className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${
             location.pathname.startsWith('/learn')
               ? 'text-amber-400'
               : 'text-slate-400 hover:text-amber-300'
           }`}
         >
           Learn
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold leading-none">
+            BETA
+          </span>
         </button>
         {location.pathname !== '/' && !location.pathname.startsWith('/learn') && (
           <button
