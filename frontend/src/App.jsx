@@ -6,6 +6,8 @@ import PolicyEditor from './pages/PolicyEditor'
 import RoundResults from './pages/RoundResults'
 import Leaderboard from './pages/Leaderboard'
 import Admin from './pages/Admin'
+import LearnHub from './pages/LearnHub'
+import LessonPage from './pages/LessonPage'
 import NavBar from './components/NavBar'
 import { getUser } from './api'
 
@@ -34,6 +36,8 @@ export default function App() {
         <Route path="/round/:roundId/results" element={<RoundResults />} />
         <Route path="/leaderboard/season/:roomId" element={<Leaderboard />} />
         <Route path="/leaderboard/:roundId" element={<Leaderboard />} />
+        <Route path="/learn" element={<LearnHub />} />
+        <Route path="/learn/:slug" element={<LessonPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

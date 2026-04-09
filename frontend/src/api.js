@@ -74,6 +74,10 @@ export const api = {
   getMyResults: (roundId) => request(`/results/${roundId}`),
   getRoundLeaderboard: (roundId) => request(`/leaderboard/${roundId}`),
   getSeasonLeaderboard: (roomId) => request(`/leaderboard/season/${roomId}`),
+
+  getLessonProgress: () => request('/lessons/progress'),
+  completeLesson: (slug) => request(`/lessons/${slug}/complete`, { method: 'POST' }),
+  resetLesson: (slug) => request(`/lessons/${slug}/reset`, { method: 'POST' }),
 };
 
 export function setAuth(data) {

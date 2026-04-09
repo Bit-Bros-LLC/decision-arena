@@ -27,7 +27,17 @@ export default function NavBar() {
         >
           Decision Arena
         </button>
-        {location.pathname !== '/' && (
+        <button
+          onClick={() => navigate('/learn')}
+          className={`text-sm font-medium transition-colors ${
+            location.pathname.startsWith('/learn')
+              ? 'text-amber-400'
+              : 'text-slate-400 hover:text-amber-300'
+          }`}
+        >
+          Learn
+        </button>
+        {location.pathname !== '/' && !location.pathname.startsWith('/learn') && (
           <button
             onClick={() => navigate(-1)}
             className="text-sm text-slate-400 hover:text-slate-200 transition-colors"

@@ -20,3 +20,20 @@ input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: #f59e0b;
 }
+
+.prose-custom {
+  line-height: 1.7;
+}
+.prose-custom p {
+  margin-bottom: 0.75rem;
+}
+.prose-custom h2 {
+  margin-bottom: 0.5rem;
+}
+.prose-custom ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+}
+.prose-custom li {
+  margin-bottom: 0.25rem;
+}
