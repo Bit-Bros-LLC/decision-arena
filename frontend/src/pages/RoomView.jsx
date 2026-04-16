@@ -287,6 +287,12 @@ export default function RoomView() {
                     <div className="flex flex-wrap gap-2">
                       {r.status === 'draft' && isProfessor && (
                         <>
+                          <Link
+                            to={`/room/${roomId}/edit-round/${r.id}`}
+                            className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-500 hover:bg-amber-500/10"
+                          >
+                            Edit
+                          </Link>
                           <button
                             type="button"
                             disabled={activatingId === r.id}

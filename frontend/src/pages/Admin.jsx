@@ -199,8 +199,9 @@ function nextSundayMidnightLocal() {
 }
 
 export default function Admin() {
-  const { roomId } = useParams();
+  const { roomId, roundId } = useParams();
   const navigate = useNavigate();
+  const isEdit = Boolean(roundId);
 
   const [costs, setCosts] = useState(DEFAULT_COSTS);
   const [startingInventory, setStartingInventory] = useState(100);
@@ -215,6 +216,7 @@ export default function Admin() {
   const [previewChartData, setPreviewChartData] = useState([]);
   const [previewBoundary, setPreviewBoundary] = useState(null);
   const [roomLabel, setRoomLabel] = useState(null);
+  const [loadingRound, setLoadingRound] = useState(isEdit);
 
   useEffect(() => {
     let cancelled = false;
@@ -237,6 +239,37 @@ export default function Admin() {
       cancelled = true;
     };
   }, [roomId, navigate]);
+
+  useEffect(() => {
+    if (!roundId) return;
+    let cancelled = false;
+    setLoadingRound(true);
+    (async () => {
+      try {
+        const rnd = await api.getRound(roundId);
+        if (cancelled) return;
+        if (rnd.status !== 'draft') {
+          navigate(`/room/${roomId}`, { replace: true });
+          return;
+        }
+        setCosts(rnd.costs ?? DEFAULT_COSTS);
+        setStartingInventory(rnd.starting_inventory ?? 100);
+        if (rnd.deadline) {
+          const dt = rnd.deadline.slice(0, 16);
+          setDeadline(dt);
+        }
+        setHistoricalJson(JSON.stringify(rnd.historical_data ?? [], null, 2));
+        setActualJson(JSON.stringify(rnd.actual_data ?? [], null, 2));
+      } catch (err) {
+        if (!cancelled) setSubmitError(err.message || 'Failed to load round');
+      } finally {
+        if (!cancelled) setLoadingRound(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [roundId, roomId, navigate]);
 
   const copyClaudePrompt = async () => {
     try {
@@ -336,26 +369,46 @@ export default function Admin() {
 
     setSubmitting(true);
     try {
-      await api.createRound({
-        room_id: roomId,
-        historical_data,
-        actual_data,
-        costs,
-        starting_inventory: Number(startingInventory),
-        deadline: deadlineIso,
-      });
+      if (isEdit) {
+        await api.updateRound(roundId, {
+          historical_data,
+          actual_data,
+          costs,
+          starting_inventory: Number(startingInventory),
+          deadline: deadlineIso,
+        });
+      } else {
+        await api.createRound({
+          room_id: roomId,
+          historical_data,
+          actual_data,
+          costs,
+          starting_inventory: Number(startingInventory),
+          deadline: deadlineIso,
+        });
+      }
       navigate(`/room/${roomId}`);
     } catch (err) {
-      setSubmitError(err.message || 'Failed to create round');
+      setSubmitError(err.message || (isEdit ? 'Failed to update round' : 'Failed to create round'));
     } finally {
       setSubmitting(false);
     }
   };
 
+  if (loadingRound) {
+    return (
+      <div className="p-6">
+        <p className="text-amber-500">Loading round…</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 max-w-3xl">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-100">Create round</h1>
+          <h1 className="text-2xl font-semibold text-slate-100">
+            {isEdit ? 'Edit round' : 'Create round'}
+          </h1>
           <p className="mt-1 text-sm text-slate-400">
             Room:{' '}
             <span className="text-slate-200">{roomLabel ?? '…'}</span>
@@ -542,7 +595,9 @@ export default function Admin() {
               disabled={submitting}
               className="rounded-lg bg-amber-500 px-5 py-2.5 font-semibold text-slate-900 transition hover:bg-amber-400 disabled:opacity-50"
             >
-              {submitting ? 'Creating…' : 'Create round'}
+              {submitting
+                ? (isEdit ? 'Saving…' : 'Creating…')
+                : (isEdit ? 'Save changes' : 'Create round')}
             </button>
             <button
               type="button"
