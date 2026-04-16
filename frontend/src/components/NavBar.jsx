@@ -55,7 +55,11 @@ export default function NavBar() {
           {dateStr} &middot; {timeStr}
         </span>
 
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => navigate('/account')}
+          className="flex items-center gap-2 rounded-lg px-2 py-1 transition-colors hover:bg-slate-700"
+          title="Account settings"
+        >
           <span className="text-slate-200 text-sm font-medium">{user.display_name}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
             user.role === 'professor'
@@ -64,7 +68,7 @@ export default function NavBar() {
           }`}>
             {user.role}
           </span>
-        </div>
+        </button>
 
         <button
           onClick={logout}
