@@ -35,6 +35,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/room/:roomId" element={<RoomView />} />
         <Route path="/room/:roomId/create-round" element={<Admin />} />
+        <Route path="/room/:roomId/edit-round/:roundId" element={<Admin />} />
         <Route path="/round/:roundId" element={<PolicyEditor />} />
         <Route path="/round/:roundId/results" element={<RoundResults />} />
         <Route path="/leaderboard/season/:roomId" element={<Leaderboard />} />

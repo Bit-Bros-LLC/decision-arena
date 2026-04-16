@@ -25,6 +25,14 @@ class CreateRoundRequest(BaseModel):
     deadline: str  # ISO datetime string
 
 
+class UpdateRoundRequest(BaseModel):
+    historical_data: list[dict] | None = None
+    actual_data: list[dict] | None = None
+    costs: dict | None = None
+    starting_inventory: int | None = None
+    deadline: str | None = None
+
+
 class RoundResponse(BaseModel):
     id: str
     room_id: str
@@ -66,6 +74,40 @@ def create_round(
     db.commit()
     db.refresh(rnd)
 
+    return _round_response(rnd, reveal_actuals=True)
+
+
+@router.put("/{round_id}", response_model=RoundResponse)
+def update_round(
+    round_id: str,
+    body: UpdateRoundRequest,
+    user: UserRow = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
+    if not rnd:
+        raise HTTPException(404, "Round not found")
+
+    room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
+    if room.professor_id != user.id:
+        raise HTTPException(403, "Not your room")
+
+    if rnd.status != "draft":
+        raise HTTPException(400, "Only draft rounds can be edited")
+
+    if body.historical_data is not None:
+        rnd.historical_data = body.historical_data
+    if body.actual_data is not None:
+        rnd.actual_data = body.actual_data
+    if body.costs is not None:
+        rnd.costs = body.costs
+    if body.starting_inventory is not None:
+        rnd.starting_inventory = body.starting_inventory
+    if body.deadline is not None:
+        rnd.deadline = datetime.fromisoformat(body.deadline)
+
+    db.commit()
+    db.refresh(rnd)
     return _round_response(rnd, reveal_actuals=True)
 
 
