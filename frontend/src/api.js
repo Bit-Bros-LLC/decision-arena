@@ -50,6 +50,9 @@ async function request(path, options = {}) {
 export const api = {
   register: (body) => request('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
   login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
+  updateProfile: (body) => request('/auth/profile', { method: 'PUT', body: JSON.stringify(body) }),
+  listUsers: () => request('/auth/users'),
+  adminResetPassword: (body) => request('/auth/admin-reset-password', { method: 'POST', body: JSON.stringify(body) }),
 
   getRooms: () => request('/rooms'),
   createRoom: (name) => request('/rooms', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -90,6 +93,12 @@ export function setAuth(data) {
 export function getUser() {
   const raw = localStorage.getItem('da_user');
   return raw ? JSON.parse(raw) : null;
+}
+
+export function updateCachedUser(updates) {
+  const current = getUser();
+  if (!current) return;
+  localStorage.setItem('da_user', JSON.stringify({ ...current, ...updates }));
 }
 
 export function logout() {
