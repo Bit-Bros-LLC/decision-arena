@@ -24,22 +24,159 @@ const DEFAULT_COSTS = {
   insurance_coverage_pct: 0.8,
 };
 
-function randomBlackSwan() {
-  if (Math.random() > 0.06) return null;
+function randomBlackSwan(chance = 0.06) {
+  if (Math.random() > chance) return null;
   const types = ['supplier_failure', 'demand_spike', 'warehouse_damage', 'cost_shock'];
   return { type: types[Math.floor(Math.random() * types.length)], note: 'sample' };
 }
 
-function generateHistoricalDays(count) {
-  const rows = [];
-  for (let day = 1; day <= count; day++) {
-    const wave = Math.sin(day / 6) * 18;
-    const demand = Math.max(10, Math.round(55 + Math.random() * 70 + wave));
-    const lead_time = 1 + Math.floor(Math.random() * 4);
-    rows.push({ day, demand, lead_time, black_swan: randomBlackSwan() });
-  }
-  return rows;
+function clampDemand(d) {
+  return Math.max(0, Math.round(d));
 }
+
+// --- Scenario preset generators ---
+// Each returns { historical: [...60 days], actual: [...30 days] }
+
+const SCENARIO_PRESETS = [
+  {
+    id: 'steady',
+    name: 'Steady State',
+    description: 'Flat demand (~80/day) with mild noise. Good baseline round — tests basic inventory policy tuning.',
+    badge: 'Easy',
+    badgeColor: 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10',
+    generate() {
+      const make = (count, startDay) =>
+        Array.from({ length: count }, (_, i) => ({
+          day: startDay + i,
+          demand: clampDemand(80 + (Math.random() - 0.5) * 30),
+          lead_time: 1 + Math.floor(Math.random() * 3),
+          black_swan: randomBlackSwan(),
+        }));
+      return { historical: make(60, 1), actual: make(30, 1) };
+    },
+  },
+  {
+    id: 'seasonality',
+    name: 'Seasonality',
+    description: 'Strong repeating wave pattern (period ~30 days). Students must detect the cycle and plan ahead.',
+    badge: 'Medium',
+    badgeColor: 'text-amber-400 border-amber-400/30 bg-amber-400/10',
+    generate() {
+      const make = (count, startDay, dayOffset) =>
+        Array.from({ length: count }, (_, i) => {
+          const t = dayOffset + i;
+          const wave = Math.sin((2 * Math.PI * t) / 30) * 35;
+          return {
+            day: startDay + i,
+            demand: clampDemand(80 + wave + (Math.random() - 0.5) * 16),
+            lead_time: 1 + Math.floor(Math.random() * 3),
+            black_swan: randomBlackSwan(),
+          };
+        });
+      return { historical: make(60, 1, 0), actual: make(30, 1, 60) };
+    },
+  },
+  {
+    id: 'trend_up',
+    name: 'Upward Trend',
+    description: 'Demand grows steadily from ~40 to ~120 over time. Tests whether policies adapt to a non-stationary mean.',
+    badge: 'Medium',
+    badgeColor: 'text-amber-400 border-amber-400/30 bg-amber-400/10',
+    generate() {
+      const slope = 1.1;
+      const make = (count, startDay, dayOffset) =>
+        Array.from({ length: count }, (_, i) => {
+          const t = dayOffset + i;
+          return {
+            day: startDay + i,
+            demand: clampDemand(40 + slope * t + (Math.random() - 0.5) * 24),
+            lead_time: 1 + Math.floor(Math.random() * 3),
+            black_swan: randomBlackSwan(),
+          };
+        });
+      return { historical: make(60, 1, 0), actual: make(30, 1, 60) };
+    },
+  },
+  {
+    id: 'step_shift',
+    name: 'Step Shift (Regime Change)',
+    description: 'Demand jumps from ~60 to ~130 midway through history. Actuals stay at the new level. Exposes static policies.',
+    badge: 'Hard',
+    badgeColor: 'text-red-400 border-red-400/30 bg-red-400/10',
+    generate() {
+      const shiftDay = 35;
+      const make = (count, startDay, dayOffset) =>
+        Array.from({ length: count }, (_, i) => {
+          const t = dayOffset + i;
+          const base = t < shiftDay ? 60 : 130;
+          return {
+            day: startDay + i,
+            demand: clampDemand(base + (Math.random() - 0.5) * 24),
+            lead_time: 1 + Math.floor(Math.random() * 4),
+            black_swan: randomBlackSwan(),
+          };
+        });
+      return { historical: make(60, 1, 0), actual: make(30, 1, 60) };
+    },
+  },
+  {
+    id: 'high_volatility',
+    name: 'High Volatility',
+    description: 'Wild swings around a ~80 mean with occasional extreme spikes. Tests safety stock and risk tolerance.',
+    badge: 'Hard',
+    badgeColor: 'text-red-400 border-red-400/30 bg-red-400/10',
+    generate() {
+      const make = (count, startDay) =>
+        Array.from({ length: count }, (_, i) => {
+          const spike = Math.random() < 0.08 ? (Math.random() < 0.5 ? 80 : -40) : 0;
+          return {
+            day: startDay + i,
+            demand: clampDemand(80 + (Math.random() - 0.5) * 80 + spike),
+            lead_time: 1 + Math.floor(Math.random() * 4),
+            black_swan: randomBlackSwan(),
+          };
+        });
+      return { historical: make(60, 1), actual: make(30, 1) };
+    },
+  },
+  {
+    id: 'intermittent',
+    name: 'Intermittent / Lumpy',
+    description: '~40% of days have zero demand, the rest spike to 120-300. Classic hard problem in spare-parts inventory.',
+    badge: 'Expert',
+    badgeColor: 'text-purple-400 border-purple-400/30 bg-purple-400/10',
+    generate() {
+      const make = (count, startDay) =>
+        Array.from({ length: count }, (_, i) => {
+          const active = Math.random() > 0.4;
+          return {
+            day: startDay + i,
+            demand: active ? clampDemand(120 + Math.random() * 180) : 0,
+            lead_time: 1 + Math.floor(Math.random() * 4),
+            black_swan: randomBlackSwan(),
+          };
+        });
+      return { historical: make(60, 1), actual: make(30, 1) };
+    },
+  },
+  {
+    id: 'black_swan_storm',
+    name: 'Black Swan Storm',
+    description: 'Normal-ish demand but disruptions hit ~20% of days. Forces students to value insurance and contingency.',
+    badge: 'Expert',
+    badgeColor: 'text-purple-400 border-purple-400/30 bg-purple-400/10',
+    generate() {
+      const make = (count, startDay) =>
+        Array.from({ length: count }, (_, i) => ({
+          day: startDay + i,
+          demand: clampDemand(80 + (Math.random() - 0.5) * 40),
+          lead_time: 1 + Math.floor(Math.random() * 4),
+          black_swan: randomBlackSwan(0.20),
+        }));
+      return { historical: make(60, 1), actual: make(30, 1) };
+    },
+  },
+];
 
 /** Next Sunday at 00:00 local time. If today is Sunday and midnight has passed, uses the following Sunday. */
 function nextSundayMidnightLocal() {
@@ -116,12 +253,14 @@ export default function Admin() {
     setCosts((c) => ({ ...c, [key]: Number.isFinite(num) ? num : c[key] }));
   };
 
-  const fillHistoricalSample = () => {
-    setHistoricalJson(JSON.stringify(generateHistoricalDays(60), null, 2));
-  };
+  const [activePreset, setActivePreset] = useState(null);
 
-  const fillActualSample = () => {
-    setActualJson(JSON.stringify(generateHistoricalDays(30), null, 2));
+  const applyPreset = (preset) => {
+    const { historical, actual } = preset.generate();
+    setHistoricalJson(JSON.stringify(historical, null, 2));
+    setActualJson(JSON.stringify(actual, null, 2));
+    setActivePreset(preset.id);
+    setChartError(null);
   };
 
   useEffect(() => {
@@ -284,10 +423,52 @@ export default function Admin() {
             </p>
           </div>
 
+          <fieldset className="space-y-4">
+            <legend className="text-lg font-medium text-amber-500">Scenario presets</legend>
+            <p className="text-xs text-slate-500">
+              Pick a preset to auto-generate 60 days of historical data + 30 days of actuals. You can still
+              edit the JSON after, or paste your own.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {SCENARIO_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset)}
+                  className={`group relative rounded-lg border p-3 text-left transition ${
+                    activePreset === preset.id
+                      ? 'border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/40'
+                      : 'border-slate-600 bg-slate-900/60 hover:border-slate-500 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-100">{preset.name}</span>
+                    <span
+                      className={`rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-wider ${preset.badgeColor}`}
+                    >
+                      {preset.badge}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400 group-hover:text-slate-300">
+                    {preset.description}
+                  </p>
+                  {activePreset === preset.id && (
+                    <span className="absolute right-2 top-2 text-[10px] font-bold uppercase tracking-wider text-amber-500">
+                      Active
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600">
+              Click again to re-roll with fresh random data for the same pattern.
+            </p>
+          </fieldset>
+
           <div className="rounded-lg border border-slate-600 bg-slate-900/50 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-slate-200">Generate data with an assistant</p>
+                <p className="text-sm font-medium text-slate-200">Or generate data with an AI assistant</p>
                 <p className="mt-1 text-xs text-slate-500">
                   Paste the copied instructions into Claude (or any AI); paste the JSON it produces into the
                   fields below.
@@ -304,16 +485,7 @@ export default function Admin() {
           </div>
 
           <div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-sm font-medium text-amber-500">Historical data (JSON)</label>
-              <button
-                type="button"
-                onClick={fillHistoricalSample}
-                className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-amber-500 hover:bg-slate-700"
-              >
-                Generate sample data (60 days)
-              </button>
-            </div>
+            <label className="text-sm font-medium text-amber-500">Historical data (JSON)</label>
             <p className="mt-1 text-xs text-slate-500">
               Format:{' '}
               <code className="text-slate-400">
@@ -324,6 +496,7 @@ export default function Admin() {
               value={historicalJson}
               onChange={(e) => {
                 setChartError(null);
+                setActivePreset(null);
                 setHistoricalJson(e.target.value);
               }}
               rows={8}
@@ -333,16 +506,7 @@ export default function Admin() {
           </div>
 
           <div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-sm font-medium text-amber-500">Actual scenario (JSON)</label>
-              <button
-                type="button"
-                onClick={fillActualSample}
-                className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-medium text-amber-500 hover:bg-slate-700"
-              >
-                Generate sample actuals (30 days)
-              </button>
-            </div>
+            <label className="text-sm font-medium text-amber-500">Actual scenario (JSON)</label>
             <p className="mt-1 text-xs text-slate-500">
               Same shape as historical; typically 30 days of actuals for scoring.
             </p>
@@ -350,6 +514,7 @@ export default function Admin() {
               value={actualJson}
               onChange={(e) => {
                 setChartError(null);
+                setActivePreset(null);
                 setActualJson(e.target.value);
               }}
               rows={6}
