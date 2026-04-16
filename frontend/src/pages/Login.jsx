@@ -27,7 +27,7 @@ export default function Login() {
               role,
             });
       setAuth(data);
-      navigate('/');
+      navigate('/dashboard');
     } catch (err) {
       if (mode === 'login' && err.status === 401) {
         setError('Invalid Password/Login. Try again');

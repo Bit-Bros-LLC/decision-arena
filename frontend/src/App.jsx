@@ -8,6 +8,7 @@ import Leaderboard from './pages/Leaderboard'
 import Admin from './pages/Admin'
 import LearnHub from './pages/LearnHub'
 import LessonPage from './pages/LessonPage'
+import LandingPage from './pages/LandingPage'
 import NavBar from './components/NavBar'
 import { getUser } from './api'
 
@@ -27,9 +28,10 @@ function ProtectedLayout() {
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<Login />} />
       <Route element={<ProtectedLayout />}>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/room/:roomId" element={<RoomView />} />
         <Route path="/room/:roomId/create-round" element={<Admin />} />
         <Route path="/round/:roundId" element={<PolicyEditor />} />

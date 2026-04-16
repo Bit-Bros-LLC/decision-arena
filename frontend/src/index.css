@@ -9,6 +9,10 @@ body {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
 }
 
+body.landing-active {
+  background: #1a1a1e;
+}
+
 input, select, textarea {
   background: #1e293b;
   border: 1px solid #334155;

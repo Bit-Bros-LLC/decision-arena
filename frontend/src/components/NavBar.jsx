@@ -22,7 +22,7 @@ export default function NavBar() {
     <nav className="bg-slate-800 border-b border-slate-700 px-4 py-3 flex items-center justify-between sticky top-0 z-50">
       <div className="flex items-center gap-4">
         <button
-          onClick={() => navigate('/')}
+          onClick={() => navigate('/dashboard')}
           className="text-lg font-bold text-amber-400 hover:text-amber-300 transition-colors"
         >
           Decision Arena
@@ -40,7 +40,7 @@ export default function NavBar() {
             BETA
           </span>
         </button>
-        {location.pathname !== '/' && !location.pathname.startsWith('/learn') && (
+        {location.pathname !== '/dashboard' && !location.pathname.startsWith('/learn') && (
           <button
             onClick={() => navigate(-1)}
             className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
