@@ -92,21 +92,85 @@ class RoomMemberRow(Base):
     room = relationship("RoomRow", back_populates="members")
 
 
+class SeasonRow(Base):
+    """A Season is a container beneath a Room that auto-generates N rounds from a
+    shared scenario plan. Rooms can host multiple seasons. Existing standalone
+    rounds remain supported (season_id is nullable on RoundRow)."""
+
+    __tablename__ = "seasons"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    total_rounds = Column(Integer, nullable=False, default=20)
+    contract_updates_allowed = Column(Integer, nullable=False, default=3)
+    scenario_preset = Column(String, nullable=False)
+    scenario_config = Column(JsonColumn, nullable=False, default=dict)
+    costs = Column(JsonColumn, nullable=False)
+    starting_inventory = Column(Integer, nullable=False, default=100)
+    round_duration_days = Column(Integer, nullable=False, default=30)
+    historical_leadin_days = Column(Integer, nullable=False, default=60)
+    status = Column(String, nullable=False, default="draft")  # "draft" | "active" | "completed"
+    created_at = Column(DateTime, default=_now)
+
+    room = relationship("RoomRow")
+    rounds = relationship(
+        "RoundRow", back_populates="season", order_by="RoundRow.round_number"
+    )
+
+
+class SeasonMemberStateRow(Base):
+    """Per-student season counters (contract update tokens)."""
+
+    __tablename__ = "season_member_state"
+    __table_args__ = (
+        UniqueConstraint("season_id", "user_id", name="uq_season_member_state"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    season_id = Column(String, ForeignKey("seasons.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    contract_updates_used = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=_now)
+
+
+class ContractUpdateSignalRow(Base):
+    """Signal by a student during round N that they intend to update their policy
+    for round N+1. Consumes one of SeasonRow.contract_updates_allowed tokens and
+    unlocks PUT /policies for the target round."""
+
+    __tablename__ = "contract_update_signals"
+    __table_args__ = (
+        UniqueConstraint("user_id", "target_round_id", name="uq_contract_signal"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    season_id = Column(String, ForeignKey("seasons.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    source_round_id = Column(String, ForeignKey("rounds.id"), nullable=False)
+    target_round_id = Column(String, ForeignKey("rounds.id"), nullable=False, index=True)
+    signaled_at = Column(DateTime, default=_now)
+
+
 class RoundRow(Base):
     __tablename__ = "rounds"
 
     id = Column(String, primary_key=True, default=_uuid)
     room_id = Column(String, ForeignKey("rooms.id"), nullable=False, index=True)
+    season_id = Column(String, ForeignKey("seasons.id"), nullable=True, index=True)
     round_number = Column(Integer, nullable=False)
     historical_data = Column(JsonColumn, nullable=False)  # list of day dicts
     actual_data = Column(JsonColumn, nullable=False)       # list of day dicts (hidden until scored)
     costs = Column(JsonColumn, nullable=False)
     starting_inventory = Column(Integer, nullable=False, default=100)
     deadline = Column(DateTime, nullable=False)
-    status = Column(String, nullable=False, default="active")  # "active" | "scored"
+    status = Column(String, nullable=False, default="active")  # "draft" | "active" | "scored"
+    # For season rounds > 1: students must signal during the previous round to unlock editing.
+    locked_for_updates = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=_now)
 
     room = relationship("RoomRow", back_populates="rounds")
+    season = relationship("SeasonRow", back_populates="rounds")
     results = relationship("ResultRow", back_populates="round")
 
 
@@ -188,18 +252,43 @@ def _migrate_schema():
     from sqlalchemy import inspect, text
 
     insp = inspect(engine)
-    if not insp.has_table("rooms"):
-        return
-    cols = {c["name"] for c in insp.get_columns("rooms")}
-    if "completed" in cols:
-        return
-    with engine.begin() as conn:
-        if DATABASE_URL.startswith("sqlite"):
-            conn.execute(text("ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT 0"))
-        else:
-            conn.execute(
-                text("ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT FALSE")
-            )
+    is_sqlite = DATABASE_URL.startswith("sqlite")
+
+    if insp.has_table("rooms"):
+        room_cols = {c["name"] for c in insp.get_columns("rooms")}
+        if "completed" not in room_cols:
+            with engine.begin() as conn:
+                if is_sqlite:
+                    conn.execute(
+                        text("ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT 0")
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT FALSE"
+                        )
+                    )
+
+    if insp.has_table("rounds"):
+        # Refresh inspector to see current columns.
+        insp = inspect(engine)
+        round_cols = {c["name"] for c in insp.get_columns("rounds")}
+        alters = []
+        if "season_id" not in round_cols:
+            alters.append("ALTER TABLE rounds ADD COLUMN season_id VARCHAR")
+        if "locked_for_updates" not in round_cols:
+            if is_sqlite:
+                alters.append(
+                    "ALTER TABLE rounds ADD COLUMN locked_for_updates BOOLEAN NOT NULL DEFAULT 0"
+                )
+            else:
+                alters.append(
+                    "ALTER TABLE rounds ADD COLUMN locked_for_updates BOOLEAN NOT NULL DEFAULT FALSE"
+                )
+        if alters:
+            with engine.begin() as conn:
+                for stmt in alters:
+                    conn.execute(text(stmt))
 
 
 def get_db():

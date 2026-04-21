@@ -12,6 +12,8 @@ export default defineConfig({
       '/policy-presets': 'http://localhost:8000',
       '/results': 'http://localhost:8000',
       '/leaderboard': 'http://localhost:8000',
+      '/seasons': 'http://localhost:8000',
+      '/lessons': 'http://localhost:8000',
       '/lessons': 'http://localhost:8000',
     },
   },

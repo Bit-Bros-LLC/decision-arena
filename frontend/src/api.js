@@ -79,6 +79,17 @@ export const api = {
   getRoundLeaderboard: (roundId) => request(`/leaderboard/${roundId}`),
   getSeasonLeaderboard: (roomId) => request(`/leaderboard/season/${roomId}`),
 
+  listSeasonPresets: () => request('/seasons/presets'),
+  previewSeason: (body) => request('/seasons/preview', { method: 'POST', body: JSON.stringify(body) }),
+  listRoomSeasons: (roomId) => request(`/seasons/room/${roomId}`),
+  getSeason: (seasonId) => request(`/seasons/${seasonId}`),
+  createSeason: (body) => request('/seasons', { method: 'POST', body: JSON.stringify(body) }),
+  activateSeason: (seasonId) => request(`/seasons/${seasonId}/activate`, { method: 'POST' }),
+  advanceSeason: (seasonId) => request(`/seasons/${seasonId}/advance`, { method: 'POST' }),
+  getSeasonState: (seasonId) => request(`/seasons/${seasonId}/my-state`),
+  signalContractUpdate: (roundId) =>
+    request(`/seasons/signal/${roundId}`, { method: 'POST' }),
+
   getLessonProgress: () => request('/lessons/progress'),
   completeLesson: (slug) => request(`/lessons/${slug}/complete`, { method: 'POST' }),
   resetLesson: (slug) => request(`/lessons/${slug}/reset`, { method: 'POST' }),

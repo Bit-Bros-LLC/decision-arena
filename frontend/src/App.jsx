@@ -6,6 +6,8 @@ import PolicyEditor from './pages/PolicyEditor'
 import RoundResults from './pages/RoundResults'
 import Leaderboard from './pages/Leaderboard'
 import Admin from './pages/Admin'
+import SeasonCreator from './pages/SeasonCreator'
+import SeasonView from './pages/SeasonView'
 import AccountSettings from './pages/AccountSettings'
 import LearnHub from './pages/LearnHub'
 import LessonPage from './pages/LessonPage'
@@ -36,6 +38,8 @@ export default function App() {
         <Route path="/room/:roomId" element={<RoomView />} />
         <Route path="/room/:roomId/create-round" element={<Admin />} />
         <Route path="/room/:roomId/edit-round/:roundId" element={<Admin />} />
+        <Route path="/room/:roomId/create-season" element={<SeasonCreator />} />
+        <Route path="/room/:roomId/season/:seasonId" element={<SeasonView />} />
         <Route path="/round/:roundId" element={<PolicyEditor />} />
         <Route path="/round/:roundId/results" element={<RoundResults />} />
         <Route path="/leaderboard/season/:roomId" element={<Leaderboard />} />

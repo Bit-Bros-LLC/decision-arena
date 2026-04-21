@@ -36,6 +36,7 @@ class UpdateRoundRequest(BaseModel):
 class RoundResponse(BaseModel):
     id: str
     room_id: str
+    season_id: str | None
     round_number: int
     historical_data: list[dict]
     actual_data: list[dict] | None  # None until scored
@@ -43,6 +44,7 @@ class RoundResponse(BaseModel):
     starting_inventory: int
     deadline: str
     status: str
+    locked_for_updates: bool = False
 
 
 @router.post("", response_model=RoundResponse)
@@ -293,6 +295,7 @@ def _round_response(rnd: RoundRow, reveal_actuals: bool) -> dict:
     return {
         "id": rnd.id,
         "room_id": rnd.room_id,
+        "season_id": rnd.season_id,
         "round_number": rnd.round_number,
         "historical_data": rnd.historical_data,
         "actual_data": rnd.actual_data if reveal_actuals else None,
@@ -300,4 +303,5 @@ def _round_response(rnd: RoundRow, reveal_actuals: bool) -> dict:
         "starting_inventory": rnd.starting_inventory,
         "deadline": rnd.deadline.isoformat() if rnd.deadline else "",
         "status": rnd.status,
+        "locked_for_updates": bool(rnd.locked_for_updates),
     }

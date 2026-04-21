@@ -5,7 +5,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
-from database import UserRow, RoundRow, RoomMemberRow, PolicyRow, get_db
+from database import (
+    ContractUpdateSignalRow,
+    PolicyRow,
+    RoomMemberRow,
+    RoundRow,
+    UserRow,
+    get_db,
+)
 from simulation.engine import run_simulation
 from simulation.policies import build_policy_fn
 
@@ -44,6 +51,22 @@ def save_policy(
     )
     if not member:
         raise HTTPException(403, "Not a member of this room")
+
+    # Season rounds past round 1 require a signal from the previous round.
+    if rnd.season_id and rnd.round_number > 1:
+        signal = (
+            db.query(ContractUpdateSignalRow)
+            .filter(
+                ContractUpdateSignalRow.user_id == user.id,
+                ContractUpdateSignalRow.target_round_id == rnd.id,
+            )
+            .first()
+        )
+        if not signal:
+            raise HTTPException(
+                403,
+                "Policy locked. Signal a contract update during the previous round to edit this one.",
+            )
 
     # Validate the policy compiles
     try:

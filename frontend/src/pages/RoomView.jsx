@@ -21,6 +21,7 @@ export default function RoomView() {
 
   const [room, setRoom] = useState(null);
   const [rounds, setRounds] = useState([]);
+  const [seasons, setSeasons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copyDone, setCopyDone] = useState(false);
@@ -34,17 +35,20 @@ export default function RoomView() {
     setError(null);
     setLoading(true);
     try {
-      const [roomsList, roundsList] = await Promise.all([
+      const [roomsList, roundsList, seasonsList] = await Promise.all([
         api.getRooms(),
         api.getRoomRounds(roomId),
+        api.listRoomSeasons(roomId).catch(() => []),
       ]);
       const found = roomsList.find((r) => r.id === roomId);
       setRoom(found || null);
       setRounds(Array.isArray(roundsList) ? roundsList : []);
+      setSeasons(Array.isArray(seasonsList) ? seasonsList : []);
     } catch (e) {
       setError(e.message || 'Failed to load room');
       setRoom(null);
       setRounds([]);
+      setSeasons([]);
     } finally {
       setLoading(false);
     }
@@ -224,8 +228,16 @@ export default function RoomView() {
           </Link>
           {isProfessor && !roomComplete && (
             <Link
-              to={`/room/${roomId}/create-round`}
+              to={`/room/${roomId}/create-season`}
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400"
+            >
+              Create Season
+            </Link>
+          )}
+          {isProfessor && !roomComplete && (
+            <Link
+              to={`/room/${roomId}/create-round`}
+              className="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-500 transition hover:bg-amber-500/10"
             >
               Create Round
             </Link>
@@ -244,14 +256,69 @@ export default function RoomView() {
           )}
         </div>
 
+        {seasons.length > 0 && (
+          <div className="mb-8">
+            <h2 className="mb-4 text-lg font-medium text-slate-100">Seasons</h2>
+            <ul className="space-y-3">
+              {seasons.map((s) => {
+                const scored = s.rounds.filter((r) => r.status === 'scored').length;
+                const active = s.rounds.find((r) => r.status === 'active');
+                const badgeColor =
+                  s.status === 'active'
+                    ? 'text-amber-400'
+                    : s.status === 'completed'
+                      ? 'text-emerald-400'
+                      : 'text-slate-400';
+                return (
+                  <li
+                    key={s.id}
+                    className="rounded-xl border border-slate-700 bg-slate-800 p-4 shadow-md"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-100">{s.name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Preset: <span className="text-slate-300">{s.scenario_preset}</span> ·{' '}
+                          {s.total_rounds} rounds · {s.contract_updates_allowed} contract updates
+                        </p>
+                        <p className="mt-0.5 text-xs">
+                          Status: <span className={badgeColor}>{s.status}</span> · {scored}/
+                          {s.total_rounds} scored
+                          {active && (
+                            <>
+                              {' '}
+                              · Round <span className="text-amber-400">{active.round_number}</span>{' '}
+                              active
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          to={`/room/${roomId}/season/${s.id}`}
+                          className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-500 hover:bg-amber-500/10"
+                        >
+                          Open season
+                        </Link>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
         <h2 className="mb-4 text-lg font-medium text-slate-100">Rounds</h2>
-        {rounds.length === 0 ? (
+        {rounds.filter((r) => !r.season_id).length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 p-8 text-center text-slate-400">
-            No rounds yet.
+            {seasons.length > 0
+              ? 'No ad-hoc rounds. Open a season above to see its rounds.'
+              : 'No rounds yet.'}
           </p>
         ) : (
           <ul className="space-y-4">
-            {rounds.map((r) => {
+            {rounds.filter((r) => !r.season_id).map((r) => {
               const statusColor =
                 r.status === 'draft'
                   ? 'text-slate-400'

@@ -168,6 +168,11 @@ export default function PolicyEditor() {
   const [libraryError, setLibraryError] = useState('');
   const [libraryLoading, setLibraryLoading] = useState(false);
 
+  const [seasonState, setSeasonState] = useState(null);
+  const [signalingUpdate, setSignalingUpdate] = useState(false);
+  const [signalMsg, setSignalMsg] = useState('');
+  const [signalError, setSignalError] = useState('');
+
   const refreshPresets = useCallback(async () => {
     if (!user) return;
     try {
@@ -181,6 +186,19 @@ export default function PolicyEditor() {
   useEffect(() => {
     refreshPresets();
   }, [refreshPresets]);
+
+  const refreshSeasonState = useCallback(async (seasonId) => {
+    if (!seasonId) {
+      setSeasonState(null);
+      return;
+    }
+    try {
+      const state = await api.getSeasonState(seasonId);
+      setSeasonState(state);
+    } catch {
+      setSeasonState(null);
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -198,6 +216,11 @@ export default function PolicyEditor() {
           setConfig({ ...defaultConfig(pol.policy_type), ...pol.config });
         }
         setPolicyLoaded(true);
+        if (r?.season_id) {
+          refreshSeasonState(r.season_id);
+        } else {
+          setSeasonState(null);
+        }
       } catch (e) {
         if (!cancelled) setLoadError(e.message || 'Failed to load round');
       }
@@ -205,7 +228,22 @@ export default function PolicyEditor() {
     return () => {
       cancelled = true;
     };
-  }, [roundId]);
+  }, [roundId, refreshSeasonState]);
+
+  const handleSignalUpdate = async () => {
+    setSignalError('');
+    setSignalMsg('');
+    setSignalingUpdate(true);
+    try {
+      const res = await api.signalContractUpdate(roundId);
+      setSignalMsg(res?.message || 'Contract update signaled');
+      if (round?.season_id) await refreshSeasonState(round.season_id);
+    } catch (err) {
+      setSignalError(err.message || 'Could not signal contract update');
+    } finally {
+      setSignalingUpdate(false);
+    }
+  };
 
   const historical = round?.historical_data || [];
   const costs = round?.costs || {};
@@ -387,7 +425,22 @@ export default function PolicyEditor() {
   }
 
   const roundActive = round.status === 'active';
-  const canEdit = user && roundActive;
+  const isProfessor = user?.role === 'professor';
+  const isSeasonRound = Boolean(round.season_id);
+  const isSeasonFollowUpRound = isSeasonRound && round.round_number > 1;
+  // Student is only editing if round 1 OR they signaled during round N-1. Professors
+  // can never submit a policy (they score rounds) so editing is disabled for them.
+  const seasonRoundUnlocked =
+    !isSeasonFollowUpRound || (seasonState?.current_round_signaled === true);
+  const canEdit = Boolean(user) && roundActive && !isProfessor && seasonRoundUnlocked;
+
+  const canSignalNextRound =
+    isSeasonRound &&
+    roundActive &&
+    !isProfessor &&
+    !!seasonState?.next_round_id &&
+    !seasonState?.next_round_signaled &&
+    (seasonState?.contract_updates_remaining ?? 0) > 0;
 
   return (
     <div className="text-slate-200">
@@ -404,6 +457,54 @@ export default function PolicyEditor() {
           <p className="mt-2 text-sm text-amber-500/90">
             This round is scored; policy edits are closed.
           </p>
+        )}
+
+        {isSeasonRound && !isProfessor && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs">
+            {seasonState ? (
+              <span className="text-slate-300">
+                Contract updates:{' '}
+                <span className="font-mono text-amber-400">
+                  {seasonState.contract_updates_remaining}
+                </span>{' '}
+                of {seasonState.contract_updates_allowed} remaining
+              </span>
+            ) : (
+              <span className="text-slate-500">Loading contract updates…</span>
+            )}
+            {roundActive && !seasonRoundUnlocked && (
+              <span className="rounded-full border border-slate-600 px-2 py-0.5 text-slate-400">
+                Policy inherited from last round (no signal given)
+              </span>
+            )}
+            {roundActive && seasonState?.next_round_id && (
+              <div className="flex items-center gap-2">
+                {seasonState.next_round_signaled ? (
+                  <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-400">
+                    Next round unlocked
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSignalUpdate}
+                    disabled={!canSignalNextRound || signalingUpdate}
+                    className="rounded-lg border border-amber-500/50 bg-slate-900 px-3 py-1 text-xs font-medium text-amber-500 hover:bg-amber-500/10 disabled:opacity-40"
+                    title={
+                      (seasonState?.contract_updates_remaining ?? 0) === 0
+                        ? 'No contract updates remaining.'
+                        : 'Lock in an update so you can edit next round.'
+                    }
+                  >
+                    {signalingUpdate
+                      ? 'Signaling…'
+                      : `Request contract update for round ${round.round_number + 1}`}
+                  </button>
+                )}
+              </div>
+            )}
+            {signalMsg && <span className="text-emerald-400">{signalMsg}</span>}
+            {signalError && <span className="text-red-400">{signalError}</span>}
+          </div>
         )}
       </div>
 
