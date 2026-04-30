@@ -14,7 +14,6 @@ export default defineConfig({
       '/leaderboard': 'http://localhost:8000',
       '/seasons': 'http://localhost:8000',
       '/lessons': 'http://localhost:8000',
-      '/lessons': 'http://localhost:8000',
     },
   },
 })

@@ -2,18 +2,51 @@
 
 A competitive inventory simulation game where students design operating policies, backtest them against historical data, and get scored on unseen actuals. Built as a companion tool for [The Decision Factory](https://a.co/d/0i9LPR5F) by Adam DeJans Jr. & John Brandon Elam.
 
-## How It Works
+The public **landing page** (`/`) introduces the product; signed-in users use the **dashboard**, **rooms**, **seasons**, and **Learn** modules below.
+
+## Modes at a glance
+
+| Mode | What it is |
+|------|------------|
+| **Classic rounds** | Professor hand-builds each round: historical window + hidden actuals. Works great for tight instructor control. |
+| **Room seasons** | A **season** under a class **room** auto-generates many rounds from **scenario presets** and optional **mix** rules. Students play through rounds with **contract updates** (limited policy changes between rounds). |
+| **Solo seasons (sandbox)** | A private **Season Sprint** anyone can start—no room required. For practice; listed under **Solo-Seasons** in the nav. |
+| **Season Sprint templates** | Professors **publish** a template in a room; each student can **instantiate** their own copy and run it asynchronously, so the class shares the same ruleset with independent runs. |
+
+## How it works
+
+### Classic rounds (standalone)
 
 1. **Professor creates a round** with historical demand data (60+ days) and secretly sets 30 days of "actual" data
 2. **Students explore** the historical data, pick a policy template, tune it with sliders, and backtest as many times as they want
 3. **Students submit** their policy before the deadline
 4. **Professor scores** the round — all policies run against the hidden actuals
-5. **Results reveal** day-by-day breakdowns, key moments, and a leaderboard
-6. **Repeat** — cumulative profit across all rounds determines the season winner
+5. **Results** show summary metrics, charts, highlights, and a full day-by-day log; **leaderboards** compare the class
+6. **Repeat** with more standalone rounds, or use seasons (below) for a linked multi-round experience
 
-## Learn Section
+### Seasons and Season Sprints
 
-An interactive lesson module (currently in **beta**) that teaches the concepts behind the game. Students work through bite-sized lessons at their own pace, each with reading content and a hands-on interactive element.
+1. A season defines **N rounds**, **costs**, **starting inventory**, **round length**, and **lead-in history** length
+2. **Scenario engine**: pick a base **preset** and a **mode**—single scenario for every round, **random mix** from allowed presets, or **custom mix** (per-round preset)
+3. **Contract updates** cap how many times a student can revise policy between rounds; changing policy may require signaling/unlocking the next round per season rules
+4. **Activate** the season, then **advance** to score the current round and unlock the next (professor-led in class; solo owners can drive their own sandbox)
+5. **Cumulative P&L** across scored rounds is tracked; use the **Season** tab on the leaderboard for a per-round matrix plus season total
+
+### Solo sandbox seasons
+
+1. From **Solo-Seasons** or **Create Private Solo Season**, open the **Season Sprint** builder (same levers as room seasons: rounds, mix, contract updates, etc.)
+2. The run is **scoped to you**—no class leaderboard unless you also play in a room
+3. Owners can use **undo last advance** / related flows where the UI offers them, to iterate on practice
+
+### Room Season Sprint templates (for classes)
+
+1. In a **room**, a professor can **publish** a template (name + season parameters)
+2. Students (or the professor) **start** a season from a template; each start is a **new season instance** with its own randomization where applicable
+3. The API can aggregate **cohort** standings across instances of the same template (see **Advanced** under API)—useful for comparing async runs; the main app focuses on in-season and round leaderboards
+
+## Learn
+
+An interactive lesson module (currently in **beta**) that teaches the concepts behind the game. Students work through bite-sized lessons at their own pace, each with reading content and a hands-on interactive element. The table below is about **Learn**; the rest of this README focuses on the **simulation game**.
 
 | # | Lesson | What Students Learn | Interactive Element |
 |---|--------|--------------------|--------------------|
@@ -30,7 +63,7 @@ An interactive lesson module (currently in **beta**) that teaches the concepts b
 
 Progress is persisted per-user in the database. Adding a new lesson requires only a component file and one registry entry.
 
-## The Game
+## The game
 
 Students manage a virtual factory's inventory. Each simulated day:
 
@@ -47,9 +80,15 @@ Three policy templates are available:
 | **Service Level** | Target fill rate (e.g. 95%) | Calculates safety stock from demand history and lead times |
 | **Reorder Point (s, Q)** | Threshold s, order size Q | When inventory position drops below s, order exactly Q units |
 
+**Policy UX**: students can save **policy presets** (reusable parameter sets) and, where allowed, **un-submit** a policy before the deadline. Rounds may be **draft**, **active**, or **scored**; professors can **activate** or **delete** rounds as the workflow requires.
+
+**After scoring**, **results** include: headline **P&L**, service level, stockout days, insurance spend, and black swan hit counts; a **scenario review** chart (historical vs actual demand) with optional raw JSON; **daily P&L** bar chart; auto **highlights**; and a scrollable **daily log** (demand, fulfillment, orders, inventory, events).
+
+**Leaderboards**: switch between **Round** (one round) and **Season** (matrix of profit per round plus **season total**). The round view adds service level, stockouts, insurance, and a mini **daily P&L** sparkline per row; the season view uses **sticky** rank and name columns for wide tables.
+
 ## Tech Stack
 
-- **Backend**: Python (FastAPI) + SQLAlchemy + PostgreSQL (SQLite for local dev)
+- **Backend**: Python (FastAPI + Pydantic) + SQLAlchemy + PostgreSQL in production; **SQLite** for local dev. Structured fields use **JSONB** on Postgres and **JSON** on SQLite.
 - **Frontend**: React + Vite + Tailwind CSS + Recharts
 - **Auth**: JWT (bcrypt password hashing)
 
@@ -70,7 +109,7 @@ uvicorn main:app --reload --port 8000
 
 The API runs at `http://localhost:8000` with auto-generated docs at `http://localhost:8000/docs`.
 
-By default it uses SQLite (`decision_arena.db`). Set `DATABASE_URL` env var for PostgreSQL:
+By default a SQLite file **`decision_arena.db`** is created in the working directory on first use (it should not be committed; ensure it is gitignored for your clone). For PostgreSQL:
 
 ```bash
 export DATABASE_URL=postgresql://user:pass@host:5432/decision_arena
@@ -84,9 +123,9 @@ npm install
 npm run dev
 ```
 
-Runs at `http://localhost:3000` with API calls proxied to the backend.
+Vite’s dev server defaults to **`http://localhost:5173`**; API paths under `/auth`, `/rooms`, `/rounds`, `/policies`, `/policy-presets`, `/results`, `/leaderboard`, `/seasons`, and `/lessons` are **proxied** to `http://localhost:8000` (see `frontend/vite.config.js`).
 
-### Run the Simulation Standalone
+### Run the simulation standalone
 
 Test the simulation engine without any web infrastructure:
 
@@ -95,94 +134,156 @@ cd backend
 python -m simulation.test_engine
 ```
 
-Runs 5 different policy configurations against a sample 30-day scenario and prints a leaderboard.
+Runs several policy configurations against a sample scenario and prints a leaderboard.
 
-## Project Structure
+## Project structure
 
 ```
 decision-arena/
   backend/
-    main.py                 FastAPI app entry point
-    auth.py                 JWT authentication
-    database.py             SQLAlchemy models (users, rooms, rounds, policies, results, lesson_progress)
+    main.py                 FastAPI app; mounts route modules
+    auth.py                 JWT authentication helpers
+    database.py             Models: users, rooms, members, seasons, rounds, policies, presets,
+                            results, lessons, room solo templates, season member state, etc.
     routes/
-      auth_routes.py        POST /auth/register, /auth/login
-      rooms.py              Room CRUD + join
-      rounds.py             Round CRUD + scoring engine
-      policies.py           Policy save + backtest
-      results.py            Results + leaderboard queries
-      lessons.py            Lesson progress tracking
+      auth_routes.py        Register, login, profile, admin password reset, list users
+      rooms.py              Rooms + join + complete (end class)
+      rounds.py               Standalone rounds: CRUD, activate, delete, score
+      policies.py           Save/update policy, get, delete (un-submit), backtest
+      policy_presets.py     User policy presets
+      results.py            Per-round results, round/season/cohort leaderboards
+      lessons.py            Lesson progress
+      seasons.py            Season CRUD, advance, templates, solo/sandbox lists
     simulation/
-      engine.py             Core simulation: run_simulation()
-      policies.py           UI policy template executors
-      highlights.py         Auto-generated key moment summaries
+      engine.py             run_simulation()
+      season_scenarios.py   Presets, mixing, round slicing
+      policies.py           Policy template executors
+      highlights.py         Key-moment text
       models.py             Dataclasses (State, Decision, DayScenario, etc.)
   frontend/
     src/
       pages/
-        Login.jsx           Auth screen
-        Dashboard.jsx       Room list + join/create
-        RoomView.jsx        Room detail + round list
-        PolicyEditor.jsx    Main gameplay: data explorer + policy sliders + backtest
-        RoundResults.jsx    Post-scoring day-by-day breakdown
-        Leaderboard.jsx     Round + season standings
-        Admin.jsx           Professor: create rounds with scenario data
-        LearnHub.jsx        Lesson grid with progress tracking
-        LessonPage.jsx      Slug-based lesson router
-        lessons/            Interactive lesson components (one per lesson)
-      components/
-        LessonLayout.jsx    Shared lesson wrapper (sections, nav, completion)
-      data/
-        lessons.js          Lesson registry (add new lessons here)
-      api.js                API client
-      App.jsx               Router
+        LandingPage.jsx     Marketing landing
+        Login.jsx, Dashboard.jsx, AccountSettings.jsx
+        RoomView.jsx        Room: rounds, seasons, Season Sprint templates
+        Admin.jsx            Create/edit standalone rounds
+        SeasonCreator.jsx, SeasonView.jsx, SeasonSprintBuilder.jsx, SoloSeasonsPage.jsx
+        PolicyEditor.jsx    Play round: backtest, submit
+        RoundResults.jsx    Scored results, charts, log
+        Leaderboard.jsx     Round + season
+        LearnHub.jsx, LessonPage.jsx, lessons/   # interactive lessons
+      components/           e.g. NavBar, shared UI
+      data/lessons.js      Lesson registry
+      api.js                HTTP client
+      App.jsx              Routes
 ```
 
-## API Endpoints
+## API endpoints
+
+### Auth
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/auth/register` | Create account |
-| POST | `/auth/login` | Get JWT token |
+| POST | `/auth/login` | Get JWT |
+| PUT | `/auth/profile` | Update profile |
+| POST | `/auth/admin-reset-password` | Admin reset (restricted) |
+| GET | `/auth/users` | List users (admin) |
+
+### Rooms
+
+| Method | Path | Description |
+|--------|------|-------------|
 | POST | `/rooms` | Create room (professor) |
 | GET | `/rooms` | List my rooms |
-| POST | `/rooms/{id}/join` | Join with invite code |
-| POST | `/rounds` | Create round (professor) |
-| GET | `/rounds/{id}` | Get round (actuals hidden until scored) |
-| GET | `/rounds/room/{roomId}` | List rounds in room |
-| POST | `/rounds/{id}/score` | Score round (professor) |
-| PUT | `/policies` | Save/update policy |
-| GET | `/policies/{roundId}` | Get my policy for a round |
-| POST | `/policies/backtest` | Run policy against historical data |
-| GET | `/results/{roundId}` | My results for a round |
-| GET | `/leaderboard/{roundId}` | Round leaderboard |
-| GET | `/leaderboard/season/{roomId}` | Cumulative season standings |
-| GET | `/lessons/progress` | Get lesson completion status |
-| POST | `/lessons/{slug}/complete` | Mark a lesson as completed |
-| POST | `/lessons/{slug}/reset` | Reset lesson progress |
+| POST | `/rooms/{room_id}/join` | Join with invite code |
+| POST | `/rooms/{room_id}/complete` | Mark class complete (end class) |
+
+### Rounds (standalone)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/rounds` | Create round |
+| PUT | `/rounds/{round_id}` | Update round |
+| GET | `/rounds/{round_id}` | Get round (actuals redacted until scored) |
+| GET | `/rounds/room/{room_id}` | List rounds in room |
+| POST | `/rounds/{round_id}/activate` | Activate |
+| POST | `/rounds/{round_id}/score` | Score |
+| DELETE | `/rounds/{round_id}` | Delete round |
+
+### Policies and presets
+
+| Method | Path | Description |
+|--------|------|-------------|
+| PUT | `/policies` | Save or update policy |
+| GET | `/policies/{round_id}` | Get my policy for round |
+| DELETE | `/policies/{round_id}` | Un-submit / clear policy (when allowed) |
+| POST | `/policies/backtest` | Backtest on historical data |
+| GET | `/policy-presets` | List my saved policy presets |
+| POST | `/policy-presets` | Create preset |
+| DELETE | `/policy-presets/{preset_id}` | Delete preset |
+
+### Results and leaderboards
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/results/{round_id}` | My results (after score) |
+| GET | `/leaderboard/{round_id}` | Round leaderboard |
+| GET | `/leaderboard/season/{season_id}` | Season standings (per-round + total) |
+| GET | `/leaderboard/room/{room_id}/template/{template_id}/cohort` | **Advanced**: cohort across season instances of one room template (API-first; not wired in the main UI) |
+
+### Lessons
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/lessons/progress` | Completion status |
+| POST | `/lessons/{slug}/complete` | Mark complete |
+| POST | `/lessons/{slug}/reset` | Reset progress |
+
+### Seasons and Season Sprint templates
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/seasons/presets` | List engine scenario presets |
+| POST | `/seasons/preview` | Preview generated season data (no persist) |
+| POST | `/seasons` | Create season |
+| GET | `/seasons/{season_id}` | Get season + rounds |
+| GET | `/seasons/{season_id}/my-state` | My contract-update state, etc. |
+| POST | `/seasons/{season_id}/activate` | Activate |
+| POST | `/seasons/{season_id}/advance` | Score current and advance |
+| POST | `/seasons/{season_id}/undo-latest-advance` | Undo last advance (when allowed) |
+| POST | `/seasons/{season_id}/rounds/{round_id}/unlock` | Unlock contract-change edit for a round |
+| GET | `/seasons/room/{room_id}` | List seasons in room |
+| GET | `/seasons/sandbox` | List current user’s seasons with `season_scope` sandbox only |
+| GET | `/seasons/my-solo` | List current user’s solo seasons |
+| GET | `/seasons/room/{room_id}/solo-templates` | List Season Sprint templates for room |
+| POST | `/seasons/room/{room_id}/solo-templates` | Create/publish template |
+| POST | `/seasons/room/{room_id}/solo-templates/{template_id}/instantiate` | Start a new season from template |
 
 ## Deployment
 
 **Backend** — [Railway](https://railway.app):
+
 - Create a new project, add a PostgreSQL database
 - Connect your repo, set root directory to `decision-arena/backend`
 - Set env vars: `DATABASE_URL` (auto-set by Railway Postgres), `JWT_SECRET`
 - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
 **Frontend** — [Vercel](https://vercel.com):
+
 - Connect your repo, set root directory to `decision-arena/frontend`
 - Set env var `VITE_API_URL` to your Railway backend URL
 - Framework preset: Vite
 
-## Future Plans
+## Roadmap and future work
 
 - Additional Learn lessons (multi-echelon inventory, demand modeling, EOQ)
-- Code policies (Monaco editor + sandboxed Python execution)
-- Auto-generated scenarios from probability distributions
-- Daily drip reveal of actuals throughout the round
-- CSV upload for historical data
-- Scenario template library
-- Email notifications when round results are posted
+- Code policies (e.g. Monaco editor + sandboxed execution)
+- Richer **scenario construction** (e.g. from probability distributions beyond current presets and mix modes)
+- Daily drip reveal of actuals throughout a round
+- **CSV upload** for hand-authored historical data (not in the app yet)
+- Deeper **shared template / library** experiences beyond per-room Season Sprint templates (e.g. org-wide or discoverable libraries)
+- Email (or in-app) notifications when results post
 
 ## License
 
