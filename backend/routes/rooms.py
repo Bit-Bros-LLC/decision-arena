@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import not_
 from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_professor
@@ -91,7 +92,14 @@ def list_rooms(
 ):
     memberships = db.query(RoomMemberRow).filter(RoomMemberRow.user_id == user.id).all()
     room_ids = [m.room_id for m in memberships]
-    rooms = db.query(RoomRow).filter(RoomRow.id.in_(room_ids)).all()
+    rooms = (
+        db.query(RoomRow)
+        .filter(
+            RoomRow.id.in_(room_ids),
+            not_(RoomRow.name.like("\\_\\_sandbox\\_\\_%", escape="\\")),
+        )
+        .all()
+    )
     return [_room_response(r, db) for r in rooms]
 
 

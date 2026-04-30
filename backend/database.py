@@ -100,12 +100,17 @@ class SeasonRow(Base):
     __tablename__ = "seasons"
 
     id = Column(String, primary_key=True, default=_uuid)
-    room_id = Column(String, ForeignKey("rooms.id"), nullable=False, index=True)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=True, index=True)
+    owner_user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    season_scope = Column(String, nullable=False, default="room")  # "room" | "sandbox"
+    source_template_id = Column(String, ForeignKey("room_solo_templates.id"), nullable=True, index=True)
     name = Column(String, nullable=False)
     total_rounds = Column(Integer, nullable=False, default=20)
     contract_updates_allowed = Column(Integer, nullable=False, default=3)
     scenario_preset = Column(String, nullable=False)
     scenario_config = Column(JsonColumn, nullable=False, default=dict)
+    season_mode = Column(String, nullable=False, default="single")  # "single" | "random_mix" | "custom_mix"
+    mix_config = Column(JsonColumn, nullable=False, default=dict)
     costs = Column(JsonColumn, nullable=False)
     starting_inventory = Column(Integer, nullable=False, default=100)
     round_duration_days = Column(Integer, nullable=False, default=30)
@@ -152,11 +157,26 @@ class ContractUpdateSignalRow(Base):
     signaled_at = Column(DateTime, default=_now)
 
 
+class RoundEditUnlockRow(Base):
+    """Explicit unlock used in round N+1 to allow policy edits for that round."""
+
+    __tablename__ = "round_edit_unlocks"
+    __table_args__ = (
+        UniqueConstraint("user_id", "round_id", name="uq_round_edit_unlock"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    season_id = Column(String, ForeignKey("seasons.id"), nullable=False, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    round_id = Column(String, ForeignKey("rounds.id"), nullable=False, index=True)
+    unlocked_at = Column(DateTime, default=_now)
+
+
 class RoundRow(Base):
     __tablename__ = "rounds"
 
     id = Column(String, primary_key=True, default=_uuid)
-    room_id = Column(String, ForeignKey("rooms.id"), nullable=False, index=True)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=True, index=True)
     season_id = Column(String, ForeignKey("seasons.id"), nullable=True, index=True)
     round_number = Column(Integer, nullable=False)
     historical_data = Column(JsonColumn, nullable=False)  # list of day dicts
@@ -165,7 +185,7 @@ class RoundRow(Base):
     starting_inventory = Column(Integer, nullable=False, default=100)
     deadline = Column(DateTime, nullable=False)
     status = Column(String, nullable=False, default="active")  # "draft" | "active" | "scored"
-    # For season rounds > 1: students must signal during the previous round to unlock editing.
+    # For season rounds > 1: editing is locked by default unless explicitly unlocked.
     locked_for_updates = Column(Boolean, nullable=False, default=False)
     created_at = Column(DateTime, default=_now)
 
@@ -203,6 +223,29 @@ class PolicyPresetRow(Base):
     updated_at = Column(DateTime, default=_now, onupdate=_now)
 
     user = relationship("UserRow", back_populates="policy_presets")
+
+
+class RoomSoloTemplateRow(Base):
+    __tablename__ = "room_solo_templates"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    room_id = Column(String, ForeignKey("rooms.id"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    season_mode = Column(String, nullable=False, default="random_mix")
+    total_rounds = Column(Integer, nullable=False, default=5)
+    contract_updates_allowed = Column(Integer, nullable=False, default=1)
+    round_duration_days = Column(Integer, nullable=False, default=30)
+    historical_leadin_days = Column(Integer, nullable=False, default=60)
+    scenario_preset = Column(String, nullable=False, default="steady")
+    scenario_config = Column(JsonColumn, nullable=False, default=dict)
+    mix_config = Column(JsonColumn, nullable=False, default=dict)
+    costs = Column(JsonColumn, nullable=False)
+    starting_inventory = Column(Integer, nullable=False, default=100)
+    is_published = Column(Boolean, nullable=False, default=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    scenario_seed = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=_now)
+    updated_at = Column(DateTime, default=_now, onupdate=_now)
 
 
 class LessonProgressRow(Base):
@@ -289,6 +332,165 @@ def _migrate_schema():
             with engine.begin() as conn:
                 for stmt in alters:
                     conn.execute(text(stmt))
+
+    if insp.has_table("seasons"):
+        insp = inspect(engine)
+        season_cols = {c["name"] for c in insp.get_columns("seasons")}
+        alters = []
+        if "owner_user_id" not in season_cols:
+            alters.append("ALTER TABLE seasons ADD COLUMN owner_user_id VARCHAR")
+        if "season_scope" not in season_cols:
+            default_scope = "'room'"
+            alters.append(
+                f"ALTER TABLE seasons ADD COLUMN season_scope VARCHAR NOT NULL DEFAULT {default_scope}"
+            )
+        if "source_template_id" not in season_cols:
+            alters.append("ALTER TABLE seasons ADD COLUMN source_template_id VARCHAR")
+        if "season_mode" not in season_cols:
+            alters.append("ALTER TABLE seasons ADD COLUMN season_mode VARCHAR NOT NULL DEFAULT 'single'")
+        if "mix_config" not in season_cols:
+            if is_sqlite:
+                alters.append("ALTER TABLE seasons ADD COLUMN mix_config JSON NOT NULL DEFAULT '{}'")
+            else:
+                alters.append("ALTER TABLE seasons ADD COLUMN mix_config JSONB NOT NULL DEFAULT '{}'::jsonb")
+        if alters:
+            with engine.begin() as conn:
+                for stmt in alters:
+                    conn.execute(text(stmt))
+
+    if insp.has_table("room_solo_templates"):
+        if not insp.has_table("round_edit_unlocks"):
+            with engine.begin() as conn:
+                if is_sqlite:
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE round_edit_unlocks (
+                              id VARCHAR PRIMARY KEY,
+                              season_id VARCHAR NOT NULL,
+                              user_id VARCHAR NOT NULL,
+                              round_id VARCHAR NOT NULL,
+                              unlocked_at DATETIME,
+                              CONSTRAINT uq_round_edit_unlock UNIQUE(user_id, round_id)
+                            )
+                            """
+                        )
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE round_edit_unlocks (
+                              id VARCHAR PRIMARY KEY,
+                              season_id VARCHAR NOT NULL REFERENCES seasons(id),
+                              user_id VARCHAR NOT NULL REFERENCES users(id),
+                              round_id VARCHAR NOT NULL REFERENCES rounds(id),
+                              unlocked_at TIMESTAMPTZ,
+                              CONSTRAINT uq_round_edit_unlock UNIQUE(user_id, round_id)
+                            )
+                            """
+                        )
+                    )
+        insp_rst = inspect(engine)
+        rst_cols = {c["name"] for c in insp_rst.get_columns("room_solo_templates")}
+        if "scenario_seed" not in rst_cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE room_solo_templates ADD COLUMN scenario_seed INTEGER")
+                )
+            with engine.begin() as conn:
+                conn.execute(
+                    text("UPDATE room_solo_templates SET scenario_seed = 42 WHERE scenario_seed IS NULL")
+                )
+        return
+    with engine.begin() as conn:
+        if is_sqlite:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE room_solo_templates (
+                      id VARCHAR PRIMARY KEY,
+                      room_id VARCHAR NOT NULL,
+                      name VARCHAR NOT NULL,
+                      season_mode VARCHAR NOT NULL DEFAULT 'random_mix',
+                      total_rounds INTEGER NOT NULL DEFAULT 5,
+                      contract_updates_allowed INTEGER NOT NULL DEFAULT 1,
+                      round_duration_days INTEGER NOT NULL DEFAULT 30,
+                      historical_leadin_days INTEGER NOT NULL DEFAULT 60,
+                      scenario_preset VARCHAR NOT NULL DEFAULT 'steady',
+                      scenario_config JSON NOT NULL DEFAULT '{}',
+                      mix_config JSON NOT NULL DEFAULT '{}',
+                      costs JSON NOT NULL,
+                      starting_inventory INTEGER NOT NULL DEFAULT 100,
+                      is_published BOOLEAN NOT NULL DEFAULT 1,
+                      created_by VARCHAR NOT NULL,
+                      scenario_seed INTEGER,
+                      created_at DATETIME,
+                      updated_at DATETIME
+                    )
+                    """
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE room_solo_templates (
+                      id VARCHAR PRIMARY KEY,
+                      room_id VARCHAR NOT NULL REFERENCES rooms(id),
+                      name VARCHAR NOT NULL,
+                      season_mode VARCHAR NOT NULL DEFAULT 'random_mix',
+                      total_rounds INTEGER NOT NULL DEFAULT 5,
+                      contract_updates_allowed INTEGER NOT NULL DEFAULT 1,
+                      round_duration_days INTEGER NOT NULL DEFAULT 30,
+                      historical_leadin_days INTEGER NOT NULL DEFAULT 60,
+                      scenario_preset VARCHAR NOT NULL DEFAULT 'steady',
+                      scenario_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+                      mix_config JSONB NOT NULL DEFAULT '{}'::jsonb,
+                      costs JSONB NOT NULL,
+                      starting_inventory INTEGER NOT NULL DEFAULT 100,
+                      is_published BOOLEAN NOT NULL DEFAULT TRUE,
+                      created_by VARCHAR NOT NULL REFERENCES users(id),
+                      scenario_seed INTEGER,
+                      created_at TIMESTAMPTZ,
+                      updated_at TIMESTAMPTZ
+                    )
+                    """
+                )
+            )
+
+    if not insp.has_table("round_edit_unlocks"):
+        with engine.begin() as conn:
+            if is_sqlite:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE round_edit_unlocks (
+                          id VARCHAR PRIMARY KEY,
+                          season_id VARCHAR NOT NULL,
+                          user_id VARCHAR NOT NULL,
+                          round_id VARCHAR NOT NULL,
+                          unlocked_at DATETIME,
+                          CONSTRAINT uq_round_edit_unlock UNIQUE(user_id, round_id)
+                        )
+                        """
+                    )
+                )
+            else:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE round_edit_unlocks (
+                          id VARCHAR PRIMARY KEY,
+                          season_id VARCHAR NOT NULL REFERENCES seasons(id),
+                          user_id VARCHAR NOT NULL REFERENCES users(id),
+                          round_id VARCHAR NOT NULL REFERENCES rounds(id),
+                          unlocked_at TIMESTAMPTZ,
+                          CONSTRAINT uq_round_edit_unlock UNIQUE(user_id, round_id)
+                        )
+                        """
+                    )
+                )
 
 
 def get_db():

@@ -34,6 +34,13 @@ def _clamp_demand(d: float) -> int:
     return max(0, round(d))
 
 
+def _drop_none_config_keys(cfg: dict | None) -> dict:
+    """JSON may send explicit null for optional sliders — drop so preset defaults apply."""
+    if not cfg:
+        return {}
+    return {k: v for k, v in cfg.items() if v is not None}
+
+
 def _make_day(day: int, demand: float, lt: int, swan: dict | None) -> dict:
     out: dict = {
         "day": day,
@@ -300,7 +307,7 @@ def generate_season(
     if preset_id not in _PRESET_BY_ID:
         raise ValueError(f"Unknown season preset: {preset_id}")
     preset = _PRESET_BY_ID[preset_id]
-    cfg = dict(config or {})
+    cfg = _drop_none_config_keys(dict(config or {}))
     rng = random.Random(seed if seed is not None else cfg.get("seed"))
 
     total = total_rounds * round_duration_days
@@ -317,6 +324,71 @@ def generate_season(
         {**d, "day": i + 1} for i, d in enumerate(timeline_raw)
     ]
     return {"leadin": leadin, "timeline": timeline}
+
+
+def generate_mixed_season(
+    season_mode: str,
+    total_rounds: int,
+    round_duration_days: int,
+    leadin_days: int,
+    scenario_preset: str = "steady",
+    scenario_config: dict | None = None,
+    mix_config: dict | None = None,
+    seed: int | None = None,
+) -> dict:
+    mode = (season_mode or "single").strip().lower()
+    if mode == "single":
+        return generate_season(
+            preset_id=scenario_preset,
+            total_rounds=total_rounds,
+            round_duration_days=round_duration_days,
+            leadin_days=leadin_days,
+            config=_drop_none_config_keys(scenario_config),
+            seed=seed,
+        )
+
+    rng = random.Random(seed)
+    cfg = dict(mix_config or {})
+    timeline: list[dict] = []
+    plan: list[dict] = []
+    if mode == "random_mix":
+        allowed = cfg.get("allowed_presets") or [p.id for p in SEASON_PRESETS]
+        allowed = [p for p in allowed if p in _PRESET_BY_ID]
+        if not allowed:
+            raise ValueError("random_mix requires at least one valid allowed preset")
+        per_preset_config = cfg.get("preset_configs") or {}
+        for round_idx in range(total_rounds):
+            pick = rng.choice(allowed)
+            seg = _PRESET_BY_ID[pick].generate(
+                rng,
+                round_duration_days,
+                _drop_none_config_keys(per_preset_config.get(pick, {})),
+            )
+            timeline.extend(seg)
+            plan.append({"round": round_idx + 1, "preset_id": pick})
+    elif mode == "custom_mix":
+        round_presets = cfg.get("round_presets") or []
+        if len(round_presets) != total_rounds:
+            raise ValueError("custom_mix requires round_presets length to match total_rounds")
+        per_preset_config = cfg.get("preset_configs") or {}
+        for round_idx, pick in enumerate(round_presets):
+            if pick not in _PRESET_BY_ID:
+                raise ValueError(f"Unknown season preset in custom mix: {pick}")
+            seg = _PRESET_BY_ID[pick].generate(
+                rng,
+                round_duration_days,
+                _drop_none_config_keys(per_preset_config.get(pick, {})),
+            )
+            timeline.extend(seg)
+            plan.append({"round": round_idx + 1, "preset_id": pick})
+    else:
+        raise ValueError(f"Unknown season mode: {season_mode}")
+
+    leadin_preset = _PRESET_BY_ID[scenario_preset] if scenario_preset in _PRESET_BY_ID else _PRESET_BY_ID["steady"]
+    leadin = leadin_preset.generate(rng, leadin_days, _drop_none_config_keys(dict(scenario_config or {})))
+    leadin = [{**d, "day": i + 1} for i, d in enumerate(leadin)]
+    timeline = [{**d, "day": i + 1} for i, d in enumerate(timeline)]
+    return {"leadin": leadin, "timeline": timeline, "round_plan": plan}
 
 
 def slice_round_data(

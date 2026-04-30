@@ -40,6 +40,16 @@ export default function NavBar() {
             BETA
           </span>
         </button>
+        <button
+          onClick={() => navigate('/solo-seasons')}
+          className={`text-sm font-medium transition-colors ${
+            location.pathname.startsWith('/solo-seasons')
+              ? 'text-amber-400'
+              : 'text-slate-400 hover:text-amber-300'
+          }`}
+        >
+          Solo-Seasons
+        </button>
         {location.pathname !== '/dashboard' && !location.pathname.startsWith('/learn') && (
           <button
             onClick={() => navigate(-1)}

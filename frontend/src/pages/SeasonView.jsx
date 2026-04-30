@@ -2,18 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, getUser } from '../api';
 
-function formatDeadline(iso) {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    });
-  } catch {
-    return iso;
-  }
-}
-
 function statusColor(status) {
   if (status === 'active') return 'text-amber-400';
   if (status === 'scored') return 'text-emerald-400';
@@ -29,7 +17,9 @@ export default function SeasonView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [undoBusy, setUndoBusy] = useState(false);
   const [myState, setMyState] = useState(null);
+  const [roundProfitById, setRoundProfitById] = useState({});
 
   const load = useCallback(async () => {
     setError(null);
@@ -37,6 +27,22 @@ export default function SeasonView() {
     try {
       const s = await api.getSeason(seasonId);
       setSeason(s);
+      const scoredRounds = Array.isArray(s?.rounds)
+        ? s.rounds.filter((r) => r.status === 'scored')
+        : [];
+      if (scoredRounds.length > 0) {
+        const settled = await Promise.all(
+          scoredRounds.map((r) =>
+            api
+              .getMyResults(r.id)
+              .then((res) => [r.id, Number(res?.total_profit)])
+              .catch(() => [r.id, null]),
+          ),
+        );
+        setRoundProfitById(Object.fromEntries(settled));
+      } else {
+        setRoundProfitById({});
+      }
       try {
         const state = await api.getSeasonState(seasonId);
         setMyState(state);
@@ -69,9 +75,30 @@ export default function SeasonView() {
   };
 
   const handleAdvance = async () => {
-    if (!window.confirm('Score the current round and advance to the next? Students without a contract-update signal will inherit their last policy.')) {
-      return;
+    const isSoloOwnerSeason =
+      season?.owner_user_id === user?.user_id &&
+      (season?.season_scope === 'sandbox' || Boolean(season?.source_template_id));
+
+    if (isSoloOwnerSeason && activeRound?.id) {
+      let hasPolicy = false;
+      try {
+        const policy = await api.getMyPolicy(activeRound.id);
+        hasPolicy = Boolean(policy);
+      } catch {
+        hasPolicy = false;
+      }
+      if (!hasPolicy) {
+        const proceed = window.confirm(
+          `Round ${activeRound.round_number} has no policy submitted. Continuing will score this round without your policy and then advance. Continue anyway?`,
+        );
+        if (!proceed) return;
+      }
+    } else {
+      if (!window.confirm('Score the current round and advance to the next?')) {
+        return;
+      }
     }
+
     setBusy(true);
     setError(null);
     try {
@@ -81,6 +108,22 @@ export default function SeasonView() {
       setError(err.message || 'Could not advance');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleUndoLatestScore = async () => {
+    if (!window.confirm('Undo the latest scored round and reopen it for editing?')) {
+      return;
+    }
+    setUndoBusy(true);
+    setError(null);
+    try {
+      await api.undoLatestSeasonAdvance(seasonId);
+      await load();
+    } catch (err) {
+      setError(err.message || 'Could not undo latest score');
+    } finally {
+      setUndoBusy(false);
     }
   };
 
@@ -102,17 +145,34 @@ export default function SeasonView() {
 
   const activeRound = season.rounds.find((r) => r.status === 'active');
   const scoredCount = season.rounds.filter((r) => r.status === 'scored').length;
+  const latestScoredRoundNumber = season.rounds
+    .filter((r) => r.status === 'scored')
+    .reduce((max, r) => Math.max(max, Number(r.round_number) || 0), 0);
+  const isPrivateSoloSeason = season.season_scope === 'sandbox';
+  const isClassSeason = season.season_scope === 'room';
+  const canManageSeason = isProfessor || isPrivateSoloSeason;
+  const canUndoLatestSoloScore =
+    season.owner_user_id === user?.user_id &&
+    (season.season_scope === 'sandbox' || Boolean(season.source_template_id)) &&
+    latestScoredRoundNumber > 0;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <Link to={`/room/${roomId}`} className="text-xs text-slate-400 hover:text-amber-400">
-            ← Back to room
-          </Link>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
-            {season.name}
-          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
+              {season.name}
+            </h1>
+            {isClassSeason && (
+              <Link
+                to={`/leaderboard/season/${seasonId}`}
+                className="shrink-0 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm text-amber-400 transition hover:border-amber-500/50 hover:bg-slate-700"
+              >
+                Season standings
+              </Link>
+            )}
+          </div>
           <p className="mt-1 text-sm text-slate-400">
             Preset: <span className="text-slate-200">{season.scenario_preset}</span> ·{' '}
             {season.total_rounds} rounds · {season.round_duration_days} days each ·{' '}
@@ -124,7 +184,7 @@ export default function SeasonView() {
             {scoredCount} of {season.total_rounds} rounds scored
           </p>
         </div>
-        {isProfessor && (
+        {canManageSeason && (
           <div className="flex flex-wrap gap-2">
             {season.status === 'draft' && (
               <button
@@ -172,11 +232,13 @@ export default function SeasonView() {
           </p>
           {myState.active_round_id && (
             <p className="mt-2 text-xs text-slate-400">
-              {myState.next_round_id
-                ? myState.next_round_signaled
-                  ? 'You have unlocked the next round for editing.'
-                  : 'Signal a contract update during the active round to unlock editing in the next one.'
-                : 'Last round of the season — no more contract updates possible.'}
+              {myState.active_round_number > 1
+                ? myState.active_round_unlocked
+                  ? 'This active round is unlocked for policy edits.'
+                  : myState.can_unlock_active_round
+                    ? 'Spend one contract update token in the policy editor to unlock edits this round.'
+                    : 'This round is locked and no contract updates remain.'
+                : 'Round 1 is always editable; later rounds are locked until you spend a contract update.'}
             </p>
           )}
         </div>
@@ -202,14 +264,37 @@ export default function SeasonView() {
                     Round {r.round_number}
                     {r.locked_for_updates && r.status !== 'scored' && (
                       <span className="ml-2 rounded bg-slate-700 px-2 py-0.5 text-xs font-normal text-slate-400">
-                        Locked by default
+                        {r.status === 'active' && !isProfessor && myState?.active_round_id === r.id
+                          ? myState.active_round_unlocked
+                            ? 'Unlocked this round'
+                            : 'Locked (inherited)'
+                          : 'Locked by default'}
                       </span>
                     )}
                   </p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    Status: <span className={statusColor(r.status)}>{r.status}</span> · Deadline:{' '}
-                    {formatDeadline(r.deadline)}
+                    Status: <span className={statusColor(r.status)}>{r.status}</span>
                   </p>
+                  {r.status === 'scored' && (
+                    <p className="mt-1 text-xs text-slate-400">
+                      Financial impact:{' '}
+                      <span
+                        className={
+                          typeof roundProfitById[r.id] === 'number'
+                            ? roundProfitById[r.id] >= 0
+                              ? 'text-emerald-400'
+                              : 'text-red-400'
+                            : 'text-slate-500'
+                        }
+                      >
+                        {typeof roundProfitById[r.id] === 'number'
+                          ? `$${roundProfitById[r.id].toLocaleString(undefined, {
+                              maximumFractionDigits: 0,
+                            })}`
+                          : 'Not available'}
+                      </span>
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {r.status === 'active' && (
@@ -222,18 +307,30 @@ export default function SeasonView() {
                   )}
                   {r.status === 'scored' && (
                     <>
+                      {canUndoLatestSoloScore && Number(r.round_number) === latestScoredRoundNumber && (
+                        <button
+                          type="button"
+                          disabled={undoBusy}
+                          onClick={handleUndoLatestScore}
+                          className="rounded-lg border border-red-500/50 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          {undoBusy ? 'Undoing…' : 'Undo score'}
+                        </button>
+                      )}
                       <Link
                         to={`/round/${r.id}/results`}
                         className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
                       >
                         Results
                       </Link>
-                      <Link
-                        to={`/leaderboard/${r.id}`}
-                        className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-500 hover:bg-amber-500/10"
-                      >
-                        Leaderboard
-                      </Link>
+                      {isClassSeason && (
+                        <Link
+                          to={`/leaderboard/${r.id}`}
+                          className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-500 hover:bg-amber-500/10"
+                        >
+                          Leaderboard
+                        </Link>
+                      )}
                     </>
                   )}
                 </div>

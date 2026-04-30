@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_user, require_professor
 from database import (
     UserRow, RoomRow, RoomMemberRow, RoundRow,
-    PolicyRow, ResultRow, get_db,
+    PolicyRow, ResultRow, SeasonRow, get_db,
 )
 from simulation.engine import run_simulation
 from simulation.policies import build_policy_fn
@@ -123,12 +123,17 @@ def get_round(
     if not rnd:
         raise HTTPException(404, "Round not found")
 
-    is_professor = (
-        db.query(RoomRow)
-        .filter(RoomRow.id == rnd.room_id, RoomRow.professor_id == user.id)
-        .first()
-        is not None
-    )
+    is_professor = False
+    if rnd.room_id:
+        is_professor = (
+            db.query(RoomRow)
+            .filter(RoomRow.id == rnd.room_id, RoomRow.professor_id == user.id)
+            .first()
+            is not None
+        )
+    elif rnd.season_id:
+        season = db.query(SeasonRow).filter(SeasonRow.id == rnd.season_id).first()
+        is_professor = bool(season and season.owner_user_id == user.id)
     if rnd.status == "draft" and not is_professor:
         raise HTTPException(403, "This round is not yet active")
 

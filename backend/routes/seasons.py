@@ -1,13 +1,9 @@
-"""Season endpoints.
-
-A Season lives beneath a Room and auto-generates N rounds from a season-scale
-scenario. Each student gets a pool of contract-update tokens. Rounds beyond the
-first are "locked" by default: a student must signal during round N to unlock
-round N+1. On advance, non-signalers inherit their previous round's policy.
-"""
+"""Season endpoints for classroom and solo season runs."""
 
 from __future__ import annotations
 
+import secrets
+from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -17,11 +13,12 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user, require_professor
 from database import (
-    ContractUpdateSignalRow,
     PolicyRow,
+    RoundEditUnlockRow,
     ResultRow,
     RoomMemberRow,
     RoomRow,
+    RoomSoloTemplateRow,
     RoundRow,
     SeasonMemberStateRow,
     SeasonRow,
@@ -31,7 +28,7 @@ from database import (
 from simulation.engine import run_simulation
 from simulation.policies import build_policy_fn
 from simulation.season_scenarios import (
-    generate_season,
+    generate_mixed_season,
     list_presets,
     slice_round_data,
 )
@@ -45,9 +42,9 @@ router = APIRouter(prefix="/seasons", tags=["seasons"])
 
 
 class CreateSeasonRequest(BaseModel):
-    room_id: str
+    room_id: Optional[str] = None
     name: str
-    scenario_preset: str
+    scenario_preset: str = "steady"
     scenario_config: dict = {}
     costs: dict
     starting_inventory: int = 100
@@ -55,17 +52,39 @@ class CreateSeasonRequest(BaseModel):
     contract_updates_allowed: int = 3
     round_duration_days: int = 30
     historical_leadin_days: int = 60
-    first_round_deadline: str  # ISO datetime string
+    first_round_deadline: Optional[str] = None  # ISO datetime string
+    season_mode: str = "single"
+    mix_config: dict = {}
+    season_scope: str = "room"
+    source_template_id: Optional[str] = None
     seed: Optional[int] = None
 
 
 class PreviewSeasonRequest(BaseModel):
-    scenario_preset: str
+    scenario_preset: str = "steady"
     scenario_config: dict = {}
-    total_rounds: int = 20
+    total_rounds: int = 5
     round_duration_days: int = 30
     historical_leadin_days: int = 60
+    season_mode: str = "single"
+    mix_config: dict = {}
     seed: Optional[int] = None
+
+
+class RoomSoloTemplateRequest(BaseModel):
+    name: str
+    season_mode: str = "random_mix"
+    total_rounds: int = 5
+    contract_updates_allowed: int = 1
+    round_duration_days: int = 30
+    historical_leadin_days: int = 60
+    scenario_preset: str = "steady"
+    scenario_config: dict = {}
+    mix_config: dict = {}
+    costs: dict
+    starting_inventory: int = 100
+    is_published: bool = True
+    scenario_seed: Optional[int] = 42
 
 
 class RoundSummary(BaseModel):
@@ -78,7 +97,10 @@ class RoundSummary(BaseModel):
 
 class SeasonResponse(BaseModel):
     id: str
-    room_id: str
+    room_id: str | None
+    owner_user_id: str | None
+    season_scope: str
+    source_template_id: str | None
     name: str
     scenario_preset: str
     scenario_config: dict
@@ -88,6 +110,8 @@ class SeasonResponse(BaseModel):
     starting_inventory: int
     round_duration_days: int
     historical_leadin_days: int
+    season_mode: str
+    mix_config: dict
     status: str
     rounds: list[RoundSummary]
 
@@ -114,10 +138,67 @@ def _ensure_member(db: Session, user: UserRow, room_id: str):
         raise HTTPException(403, "Not a member of this room")
 
 
+def _ensure_season_access(db: Session, user: UserRow, season: SeasonRow):
+    if season.room_id:
+        _ensure_member(db, user, season.room_id)
+        return
+    if season.owner_user_id != user.id:
+        raise HTTPException(403, "Not your season")
+
+
+def _template_to_dict(row: RoomSoloTemplateRow) -> dict:
+    return {
+        "id": row.id,
+        "room_id": row.room_id,
+        "name": row.name,
+        "season_mode": row.season_mode,
+        "total_rounds": row.total_rounds,
+        "contract_updates_allowed": row.contract_updates_allowed,
+        "round_duration_days": row.round_duration_days,
+        "historical_leadin_days": row.historical_leadin_days,
+        "scenario_preset": row.scenario_preset,
+        "scenario_config": row.scenario_config or {},
+        "mix_config": row.mix_config or {},
+        "costs": row.costs,
+        "starting_inventory": row.starting_inventory,
+        "is_published": bool(row.is_published),
+        "scenario_seed": row.scenario_seed,
+    }
+
+
+def _get_or_create_private_sandbox_room(db: Session, user: UserRow) -> RoomRow:
+    sandbox_name = f"__sandbox__{user.id}"
+    room = db.query(RoomRow).filter(RoomRow.name == sandbox_name).first()
+    if room:
+        member = (
+            db.query(RoomMemberRow)
+            .filter(RoomMemberRow.user_id == user.id, RoomMemberRow.room_id == room.id)
+            .first()
+        )
+        if not member:
+            db.add(RoomMemberRow(user_id=user.id, room_id=room.id))
+            db.flush()
+        return room
+    room = RoomRow(
+        name=sandbox_name,
+        invite_code=secrets.token_hex(4).upper(),
+        professor_id=user.id,
+        completed=False,
+    )
+    db.add(room)
+    db.flush()
+    db.add(RoomMemberRow(user_id=user.id, room_id=room.id))
+    db.flush()
+    return room
+
+
 def _season_to_response(season: SeasonRow, rounds: list[RoundRow]) -> dict:
     return {
         "id": season.id,
         "room_id": season.room_id,
+        "owner_user_id": season.owner_user_id,
+        "season_scope": season.season_scope,
+        "source_template_id": season.source_template_id,
         "name": season.name,
         "scenario_preset": season.scenario_preset,
         "scenario_config": season.scenario_config or {},
@@ -127,6 +208,8 @@ def _season_to_response(season: SeasonRow, rounds: list[RoundRow]) -> dict:
         "starting_inventory": season.starting_inventory,
         "round_duration_days": season.round_duration_days,
         "historical_leadin_days": season.historical_leadin_days,
+        "season_mode": season.season_mode,
+        "mix_config": season.mix_config or {},
         "status": season.status,
         "rounds": [
             {
@@ -172,7 +255,7 @@ def get_presets(_: UserRow = Depends(get_current_user)):
 @router.post("/preview")
 def preview_season(
     body: PreviewSeasonRequest,
-    _: UserRow = Depends(require_professor),
+    _: UserRow = Depends(get_current_user),
 ):
     """Generate a season timeline without persisting it so the professor can
     visualize the demand signal and historical lead-in before creating."""
@@ -181,15 +264,17 @@ def preview_season(
     if body.round_duration_days < 1:
         raise HTTPException(400, "round_duration_days must be >= 1")
     try:
-        plan = generate_season(
-            preset_id=body.scenario_preset,
+        plan = generate_mixed_season(
+            season_mode=body.season_mode,
             total_rounds=body.total_rounds,
             round_duration_days=body.round_duration_days,
             leadin_days=body.historical_leadin_days,
-            config=body.scenario_config or {},
+            scenario_preset=body.scenario_preset,
+            scenario_config=body.scenario_config or {},
+            mix_config=body.mix_config or {},
             seed=body.seed,
         )
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc))
     return {
         "leadin": plan["leadin"],
@@ -197,6 +282,7 @@ def preview_season(
         "round_boundaries": [
             i * body.round_duration_days + 1 for i in range(1, body.total_rounds)
         ],
+        "round_plan": plan.get("round_plan", []),
     }
 
 
@@ -208,14 +294,29 @@ def preview_season(
 @router.post("", response_model=SeasonResponse)
 def create_season(
     body: CreateSeasonRequest,
-    user: UserRow = Depends(require_professor),
+    user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    room = db.query(RoomRow).filter(RoomRow.id == body.room_id).first()
-    if not room or room.professor_id != user.id:
-        raise HTTPException(403, "Not your room")
-    if room.completed:
-        raise HTTPException(400, "This class is completed; no more seasons can be created")
+    scope = (body.season_scope or "room").lower()
+    room = None
+    if scope == "room":
+        if not body.room_id:
+            raise HTTPException(400, "room_id required for room seasons")
+        room = db.query(RoomRow).filter(RoomRow.id == body.room_id).first()
+        if not room:
+            raise HTTPException(404, "Room not found")
+        if user.role == "professor":
+            if room.professor_id != user.id:
+                raise HTTPException(403, "Not your room")
+        else:
+            _ensure_member(db, user, room.id)
+        if room.completed:
+            raise HTTPException(400, "This class is completed; no more seasons can be created")
+    elif scope != "sandbox":
+        raise HTTPException(400, "season_scope must be room or sandbox")
+    if scope == "sandbox":
+        room = _get_or_create_private_sandbox_room(db, user)
+        body.room_id = room.id
     if body.total_rounds < 1:
         raise HTTPException(400, "total_rounds must be >= 1")
     if body.contract_updates_allowed < 0:
@@ -223,31 +324,53 @@ def create_season(
     if body.round_duration_days < 1:
         raise HTTPException(400, "round_duration_days must be >= 1")
 
-    try:
-        first_deadline = datetime.fromisoformat(body.first_round_deadline)
-    except Exception:
-        raise HTTPException(400, "first_round_deadline must be ISO datetime")
+    def _parse_iso_deadline(value: str) -> datetime:
+        # Accept common JS ISO output with trailing Z.
+        cleaned = value.strip()
+        if cleaned.endswith("Z"):
+            cleaned = cleaned[:-1] + "+00:00"
+        return datetime.fromisoformat(cleaned)
+
+    first_deadline: datetime
+    if body.first_round_deadline:
+        try:
+            first_deadline = _parse_iso_deadline(body.first_round_deadline)
+        except Exception:
+            raise HTTPException(400, "first_round_deadline must be ISO datetime")
+    else:
+        # Self-run seasons should not require a manual deadline.
+        if scope in ("sandbox", "room"):
+            first_deadline = datetime.now()
+        else:
+            raise HTTPException(400, "first_round_deadline must be ISO datetime")
 
     # Generate the season timeline.
     try:
-        plan = generate_season(
-            preset_id=body.scenario_preset,
+        plan = generate_mixed_season(
+            season_mode=body.season_mode,
             total_rounds=body.total_rounds,
             round_duration_days=body.round_duration_days,
             leadin_days=body.historical_leadin_days,
-            config=body.scenario_config or {},
+            scenario_preset=body.scenario_preset,
+            scenario_config=body.scenario_config or {},
+            mix_config=body.mix_config or {},
             seed=body.seed,
         )
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc))
 
     season = SeasonRow(
         room_id=body.room_id,
+        owner_user_id=user.id,
+        season_scope=scope,
+        source_template_id=body.source_template_id,
         name=body.name,
         total_rounds=body.total_rounds,
         contract_updates_allowed=body.contract_updates_allowed,
         scenario_preset=body.scenario_preset,
         scenario_config=body.scenario_config or {},
+        season_mode=body.season_mode,
+        mix_config=body.mix_config or {},
         costs=body.costs,
         starting_inventory=body.starting_inventory,
         round_duration_days=body.round_duration_days,
@@ -277,6 +400,14 @@ def create_season(
         db.add(rnd)
         rounds.append(rnd)
 
+    auto_start = bool(
+        scope == "sandbox" or body.source_template_id is not None or user.role != "professor"
+    )
+    if auto_start and rounds:
+        season.status = "active"
+        rounds[0].status = "active"
+        rounds[0].locked_for_updates = False
+
     db.commit()
     for r in rounds:
         db.refresh(r)
@@ -293,7 +424,66 @@ def list_room_seasons(
     _ensure_member(db, user, room_id)
     seasons = (
         db.query(SeasonRow)
-        .filter(SeasonRow.room_id == room_id)
+        .filter(SeasonRow.room_id == room_id, SeasonRow.season_scope == "room")
+        .order_by(SeasonRow.created_at.desc())
+        .all()
+    )
+    # Template ("Season Sprint") runs are private: only the owner lists them; shared
+    # room seasons without a template stay visible to all members.
+    visible = [
+        s
+        for s in seasons
+        if s.source_template_id is None or s.owner_user_id == user.id
+    ]
+    template_seasons = [s for s in visible if s.source_template_id]
+    by_group: dict[tuple[str, str], list[SeasonRow]] = defaultdict(list)
+    for s in template_seasons:
+        by_group[(s.owner_user_id or "", s.source_template_id or "")].append(s)
+    attempt_by_id: dict[str, int] = {}
+    for _key, group in by_group.items():
+        ordered = sorted(
+            group,
+            key=lambda x: (x.created_at or datetime.min, x.id),
+        )
+        for i, s in enumerate(ordered, 1):
+            attempt_by_id[s.id] = i
+    tids = {s.source_template_id for s in template_seasons if s.source_template_id}
+    name_by_tid: dict[str, str] = {}
+    if tids:
+        for trow in (
+            db.query(RoomSoloTemplateRow)
+            .filter(RoomSoloTemplateRow.id.in_(tids))
+            .all()
+        ):
+            name_by_tid[trow.id] = trow.name
+
+    out: list[dict] = []
+    for s in visible:
+        rounds = (
+            db.query(RoundRow)
+            .filter(RoundRow.season_id == s.id)
+            .order_by(RoundRow.round_number)
+            .all()
+        )
+        row = _season_to_response(s, rounds)
+        if s.source_template_id:
+            row["sprint_attempt"] = attempt_by_id.get(s.id, 1)
+            row["template_name"] = name_by_tid.get(s.source_template_id)
+        else:
+            row["sprint_attempt"] = None
+            row["template_name"] = None
+        out.append(row)
+    return out
+
+
+@router.get("/sandbox")
+def list_sandbox_seasons(
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    seasons = (
+        db.query(SeasonRow)
+        .filter(SeasonRow.owner_user_id == user.id, SeasonRow.season_scope == "sandbox")
         .order_by(SeasonRow.created_at.desc())
         .all()
     )
@@ -309,6 +499,69 @@ def list_room_seasons(
     return out
 
 
+@router.get("/my-solo")
+def list_my_solo_seasons(
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    seasons = (
+        db.query(SeasonRow)
+        .filter(
+            SeasonRow.owner_user_id == user.id,
+            (SeasonRow.season_scope == "sandbox") | (SeasonRow.source_template_id.isnot(None)),
+        )
+        .order_by(SeasonRow.created_at.desc())
+        .all()
+    )
+    template_seasons = [s for s in seasons if s.source_template_id]
+    by_group: dict[tuple[str, str], list[SeasonRow]] = defaultdict(list)
+    for s in template_seasons:
+        by_group[(s.room_id or "", s.source_template_id or "")].append(s)
+    attempt_by_id: dict[str, int] = {}
+    for _key, group in by_group.items():
+        ordered = sorted(
+            group,
+            key=lambda x: (x.created_at or datetime.min, x.id),
+        )
+        for i, s in enumerate(ordered, 1):
+            attempt_by_id[s.id] = i
+    tids = {s.source_template_id for s in template_seasons if s.source_template_id}
+    name_by_tid: dict[str, str] = {}
+    if tids:
+        for trow in (
+            db.query(RoomSoloTemplateRow)
+            .filter(RoomSoloTemplateRow.id.in_(tids))
+            .all()
+        ):
+            name_by_tid[trow.id] = trow.name
+    rids = {s.room_id for s in seasons if s.room_id}
+    room_name_by_id: dict[str, str] = {}
+    if rids:
+        for rm in db.query(RoomRow).filter(RoomRow.id.in_(rids)).all():
+            room_name_by_id[rm.id] = rm.name
+    out = []
+    for s in seasons:
+        rounds = (
+            db.query(RoundRow)
+            .filter(RoundRow.season_id == s.id)
+            .order_by(RoundRow.round_number)
+            .all()
+        )
+        row = _season_to_response(s, rounds)
+        row["open_path"] = (
+            f"/room/{s.room_id}/season/{s.id}" if s.room_id else f"/season-sprint/{s.id}"
+        )
+        if s.source_template_id:
+            row["sprint_attempt"] = attempt_by_id.get(s.id, 1)
+            row["template_name"] = name_by_tid.get(s.source_template_id)
+        else:
+            row["sprint_attempt"] = None
+            row["template_name"] = None
+        row["room_name"] = room_name_by_id.get(s.room_id) if s.room_id else None
+        out.append(row)
+    return out
+
+
 @router.get("/{season_id}", response_model=SeasonResponse)
 def get_season(
     season_id: str,
@@ -318,7 +571,7 @@ def get_season(
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
         raise HTTPException(404, "Season not found")
-    _ensure_member(db, user, season.room_id)
+    _ensure_season_access(db, user, season)
     rounds = (
         db.query(RoundRow)
         .filter(RoundRow.season_id == season_id)
@@ -337,7 +590,7 @@ def get_my_state(
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
         raise HTTPException(404, "Season not found")
-    _ensure_member(db, user, season.room_id)
+    _ensure_season_access(db, user, season)
 
     state = (
         db.query(SeasonMemberStateRow)
@@ -356,41 +609,21 @@ def get_my_state(
         .order_by(RoundRow.round_number)
         .first()
     )
-    next_round = None
-    next_round_signaled = False
+    active_round_unlocked = False
     if active:
-        next_round = (
-            db.query(RoundRow)
+        unlock_now = (
+            db.query(RoundEditUnlockRow)
             .filter(
-                RoundRow.season_id == season_id,
-                RoundRow.round_number == active.round_number + 1,
+                RoundEditUnlockRow.user_id == user.id,
+                RoundEditUnlockRow.round_id == active.id,
             )
             .first()
         )
-        if next_round:
-            signal = (
-                db.query(ContractUpdateSignalRow)
-                .filter(
-                    ContractUpdateSignalRow.user_id == user.id,
-                    ContractUpdateSignalRow.target_round_id == next_round.id,
-                )
-                .first()
-            )
-            next_round_signaled = signal is not None
-
-    # Signals for the current round (so the editor can tell whether THIS round is
-    # editable for this student).
-    current_round_signaled = False
-    if active:
-        signal_now = (
-            db.query(ContractUpdateSignalRow)
-            .filter(
-                ContractUpdateSignalRow.user_id == user.id,
-                ContractUpdateSignalRow.target_round_id == active.id,
-            )
-            .first()
+        active_round_unlocked = (
+            active.round_number == 1
+            or not bool(active.locked_for_updates)
+            or unlock_now is not None
         )
-        current_round_signaled = signal_now is not None
 
     return {
         "season_id": season_id,
@@ -399,9 +632,14 @@ def get_my_state(
         "contract_updates_remaining": max(0, season.contract_updates_allowed - used),
         "active_round_id": active.id if active else None,
         "active_round_number": active.round_number if active else None,
-        "current_round_signaled": current_round_signaled,
-        "next_round_id": next_round.id if next_round else None,
-        "next_round_signaled": next_round_signaled,
+        "active_round_unlocked": active_round_unlocked,
+        "can_unlock_active_round": bool(
+            active
+            and active.round_number > 1
+            and active.status == "active"
+            and not active_round_unlocked
+            and used < season.contract_updates_allowed
+        ),
     }
 
 
@@ -413,14 +651,20 @@ def get_my_state(
 @router.post("/{season_id}/activate")
 def activate_season(
     season_id: str,
-    user: UserRow = Depends(require_professor),
+    user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
         raise HTTPException(404, "Season not found")
-    if not _is_professor_of(db, user, season.room_id):
-        raise HTTPException(403, "Not your room")
+    if season.room_id:
+        if user.role == "professor":
+            if not _is_professor_of(db, user, season.room_id):
+                raise HTTPException(403, "Not your room")
+        else:
+            _ensure_member(db, user, season.room_id)
+    elif season.owner_user_id != user.id:
+        raise HTTPException(403, "Not your season")
     if season.status != "draft":
         raise HTTPException(400, f"Season is already {season.status}")
 
@@ -443,18 +687,24 @@ def activate_season(
 @router.post("/{season_id}/advance")
 def advance_season(
     season_id: str,
-    user: UserRow = Depends(require_professor),
+    user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Score the current active round and activate the next one. Students who
-    did not signal a contract update for the next round inherit their current
-    policy automatically."""
+    """Score the current active round and activate the next one.
+    Policies are copied forward by default; students may spend a contract
+    update token in the new active round to unlock editing."""
 
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
         raise HTTPException(404, "Season not found")
-    if not _is_professor_of(db, user, season.room_id):
-        raise HTTPException(403, "Not your room")
+    if season.room_id:
+        if user.role == "professor":
+            if not _is_professor_of(db, user, season.room_id):
+                raise HTTPException(403, "Not your room")
+        else:
+            _ensure_member(db, user, season.room_id)
+    elif season.owner_user_id != user.id:
+        raise HTTPException(403, "Not your season")
     if season.status != "active":
         raise HTTPException(400, f"Season is {season.status}")
 
@@ -484,17 +734,9 @@ def advance_season(
         db.commit()
         return {"message": "Season complete", "season_status": "completed"}
 
-    # Copy policies for students who did not signal for `next_round`.
+    # Copy prior policies into the next round for all users by default.
     prev_policies = db.query(PolicyRow).filter(PolicyRow.round_id == active.id).all()
-    signaled_user_ids = {
-        s.user_id
-        for s in db.query(ContractUpdateSignalRow)
-        .filter(ContractUpdateSignalRow.target_round_id == next_round.id)
-        .all()
-    }
     for pol in prev_policies:
-        if pol.user_id in signaled_user_ids:
-            continue
         existing = (
             db.query(PolicyRow)
             .filter(
@@ -515,11 +757,70 @@ def advance_season(
         )
 
     next_round.status = "active"
+    next_round.locked_for_updates = next_round.round_number > 1
     db.commit()
     return {
         "message": "Advanced to next round",
         "scored_round_id": active.id,
         "active_round_id": next_round.id,
+    }
+
+
+@router.post("/{season_id}/undo-latest-advance")
+def undo_latest_advance(
+    season_id: str,
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
+    if not season:
+        raise HTTPException(404, "Season not found")
+    _ensure_season_access(db, user, season)
+
+    # Only allow self-managed solo seasons to undo scoring.
+    is_solo_owner = (
+        season.owner_user_id == user.id
+        and (season.season_scope == "sandbox" or season.source_template_id is not None)
+    )
+    if not is_solo_owner:
+        raise HTTPException(403, "Undo scoring is only available in your solo seasons")
+
+    latest_scored = (
+        db.query(RoundRow)
+        .filter(RoundRow.season_id == season_id, RoundRow.status == "scored")
+        .order_by(RoundRow.round_number.desc())
+        .first()
+    )
+    if not latest_scored:
+        raise HTTPException(400, "No scored round to undo")
+
+    next_round = (
+        db.query(RoundRow)
+        .filter(
+            RoundRow.season_id == season_id,
+            RoundRow.round_number == latest_scored.round_number + 1,
+        )
+        .first()
+    )
+
+    # Roll back results for the reopened round.
+    db.query(ResultRow).filter(ResultRow.round_id == latest_scored.id).delete()
+    latest_scored.status = "active"
+
+    if next_round:
+        # Undo the "advance" side effects so the next round is untouched again.
+        next_round.status = "draft"
+        next_round.locked_for_updates = True
+        db.query(PolicyRow).filter(PolicyRow.round_id == next_round.id).delete()
+        db.query(RoundEditUnlockRow).filter(RoundEditUnlockRow.round_id == next_round.id).delete()
+
+    season.status = "active"
+    db.commit()
+
+    return {
+        "message": "Latest scored round reopened",
+        "active_round_id": latest_scored.id,
+        "reopened_round_number": latest_scored.round_number,
     }
 
 
@@ -570,57 +871,53 @@ def _score_round_in_place(rnd: RoundRow, db: Session) -> int:
 
 
 # ---------------------------------------------------------------------------
-# Signal a contract update for the next round
+# Spend a contract-update token to unlock active round edits
 # ---------------------------------------------------------------------------
 
 
-@router.post("/signal/{round_id}")
-def signal_update(
+@router.post("/{season_id}/rounds/{round_id}/unlock")
+def unlock_round_edits(
+    season_id: str,
     round_id: str,
     user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Student signals during round N that they will update their policy for
-    round N+1. Consumes one contract-update token and unlocks the next round for
-    this student."""
-
-    source = db.query(RoundRow).filter(RoundRow.id == round_id).first()
-    if not source:
+    rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
+    if not rnd:
         raise HTTPException(404, "Round not found")
-    if not source.season_id:
+    if not rnd.season_id:
         raise HTTPException(400, "This round is not part of a season")
-    if source.status != "active":
-        raise HTTPException(400, "Source round is not active")
+    if rnd.season_id != season_id:
+        raise HTTPException(400, "Round does not belong to this season")
+    if rnd.status != "active":
+        raise HTTPException(400, "Round is not active")
+    if rnd.round_number <= 1:
+        raise HTTPException(400, "Round 1 is already editable")
 
-    _ensure_member(db, user, source.room_id)
-    if user.role == "professor":
-        raise HTTPException(400, "Professors do not submit contract updates")
-
-    target = (
-        db.query(RoundRow)
-        .filter(
-            RoundRow.season_id == source.season_id,
-            RoundRow.round_number == source.round_number + 1,
-        )
-        .first()
-    )
-    if not target:
-        raise HTTPException(400, "No next round in this season")
-
-    existing_signal = (
-        db.query(ContractUpdateSignalRow)
-        .filter(
-            ContractUpdateSignalRow.user_id == user.id,
-            ContractUpdateSignalRow.target_round_id == target.id,
-        )
-        .first()
-    )
-    if existing_signal:
-        raise HTTPException(400, "Already signaled for the next round")
-
-    season = db.query(SeasonRow).filter(SeasonRow.id == source.season_id).first()
+    season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
         raise HTTPException(500, "Season missing")
+    _ensure_season_access(db, user, season)
+
+    existing_unlock = (
+        db.query(RoundEditUnlockRow)
+        .filter(
+            RoundEditUnlockRow.user_id == user.id,
+            RoundEditUnlockRow.round_id == rnd.id,
+        )
+        .first()
+    )
+    if existing_unlock:
+        state = _get_or_create_member_state(db, season, user)
+        return {
+            "message": "Round already unlocked",
+            "round_id": rnd.id,
+            "contract_updates_used": state.contract_updates_used,
+            "contract_updates_remaining": max(
+                0,
+                season.contract_updates_allowed - state.contract_updates_used,
+            ),
+        }
 
     state = _get_or_create_member_state(db, season, user)
     if state.contract_updates_used >= season.contract_updates_allowed:
@@ -628,19 +925,103 @@ def signal_update(
 
     state.contract_updates_used += 1
     db.add(
-        ContractUpdateSignalRow(
+        RoundEditUnlockRow(
             season_id=season.id,
             user_id=user.id,
-            source_round_id=source.id,
-            target_round_id=target.id,
+            round_id=rnd.id,
         )
     )
     db.commit()
     return {
-        "message": "Contract update signaled",
-        "target_round_id": target.id,
+        "message": "Round unlocked for policy edits",
+        "round_id": rnd.id,
         "contract_updates_used": state.contract_updates_used,
         "contract_updates_remaining": max(
             0, season.contract_updates_allowed - state.contract_updates_used
         ),
     }
+
+
+@router.get("/room/{room_id}/solo-templates")
+def list_room_solo_templates(
+    room_id: str,
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_member(db, user, room_id)
+    q = db.query(RoomSoloTemplateRow).filter(RoomSoloTemplateRow.room_id == room_id)
+    if user.role != "professor":
+        q = q.filter(RoomSoloTemplateRow.is_published == True)
+    rows = q.order_by(RoomSoloTemplateRow.created_at.desc()).all()
+    return [_template_to_dict(r) for r in rows]
+
+
+@router.post("/room/{room_id}/solo-templates")
+def create_room_solo_template(
+    room_id: str,
+    body: RoomSoloTemplateRequest,
+    user: UserRow = Depends(require_professor),
+    db: Session = Depends(get_db),
+):
+    if not _is_professor_of(db, user, room_id):
+        raise HTTPException(403, "Not your room")
+    row = RoomSoloTemplateRow(
+        room_id=room_id,
+        name=body.name,
+        season_mode=body.season_mode,
+        total_rounds=body.total_rounds,
+        contract_updates_allowed=body.contract_updates_allowed,
+        round_duration_days=body.round_duration_days,
+        historical_leadin_days=body.historical_leadin_days,
+        scenario_preset=body.scenario_preset,
+        scenario_config=body.scenario_config or {},
+        mix_config=body.mix_config or {},
+        costs=body.costs,
+        starting_inventory=body.starting_inventory,
+        is_published=body.is_published,
+        scenario_seed=body.scenario_seed,
+        created_by=user.id,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _template_to_dict(row)
+
+
+@router.post("/room/{room_id}/solo-templates/{template_id}/instantiate", response_model=SeasonResponse)
+def instantiate_room_solo_template(
+    room_id: str,
+    template_id: str,
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _ensure_member(db, user, room_id)
+    template = (
+        db.query(RoomSoloTemplateRow)
+        .filter(RoomSoloTemplateRow.id == template_id, RoomSoloTemplateRow.room_id == room_id)
+        .first()
+    )
+    if not template:
+        raise HTTPException(404, "Template not found")
+    if not template.is_published and not _is_professor_of(db, user, room_id):
+        raise HTTPException(403, "Template not published")
+    seed = template.scenario_seed if template.scenario_seed is not None else 42
+    body = CreateSeasonRequest(
+        room_id=room_id,
+        name=f"{template.name} · {user.display_name}",
+        scenario_preset=template.scenario_preset,
+        scenario_config=template.scenario_config or {},
+        costs=template.costs,
+        starting_inventory=template.starting_inventory,
+        total_rounds=template.total_rounds,
+        contract_updates_allowed=template.contract_updates_allowed,
+        round_duration_days=template.round_duration_days,
+        historical_leadin_days=template.historical_leadin_days,
+        first_round_deadline=datetime.now().isoformat(),
+        season_mode=template.season_mode,
+        mix_config=template.mix_config or {},
+        season_scope="room",
+        source_template_id=template.id,
+        seed=seed,
+    )
+    return create_season(body=body, user=user, db=db)

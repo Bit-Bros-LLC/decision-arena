@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   LineChart,
   Line,
@@ -51,6 +51,18 @@ const COST_TOOLTIPS = {
   'Insurance coverage':
     'Share of black swan damage covered by insurance when you are insured (remainder is out-of-pocket).',
 };
+
+function formatMoney(n) {
+  if (n == null || Number.isNaN(n)) return '—';
+  const sign = n < 0 ? '-' : '';
+  return `${sign}$${Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+}
+
+function profitClass(v) {
+  if (v > 0) return 'text-emerald-400';
+  if (v < 0) return 'text-red-400';
+  return 'text-slate-400';
+}
 
 function formatProfitAxisTick(v) {
   const n = Number(v);
@@ -145,6 +157,7 @@ function defaultConfig(policyType) {
 
 export default function PolicyEditor() {
   const { roundId } = useParams();
+  const navigate = useNavigate();
   const user = getUser();
 
   const [round, setRound] = useState(null);
@@ -152,6 +165,7 @@ export default function PolicyEditor() {
   const [policyType, setPolicyType] = useState('order_up_to');
   const [config, setConfig] = useState(() => defaultConfig('order_up_to'));
   const [policyLoaded, setPolicyLoaded] = useState(false);
+  const [hasSubmittedPolicy, setHasSubmittedPolicy] = useState(false);
 
   const [backtestResult, setBacktestResult] = useState(null);
   const [backtestError, setBacktestError] = useState(null);
@@ -169,9 +183,10 @@ export default function PolicyEditor() {
   const [libraryLoading, setLibraryLoading] = useState(false);
 
   const [seasonState, setSeasonState] = useState(null);
-  const [signalingUpdate, setSignalingUpdate] = useState(false);
-  const [signalMsg, setSignalMsg] = useState('');
-  const [signalError, setSignalError] = useState('');
+  const [seasonMeta, setSeasonMeta] = useState(null);
+  const [unlockingPolicy, setUnlockingPolicy] = useState(false);
+  const [unlockMsg, setUnlockMsg] = useState('');
+  const [unlockError, setUnlockError] = useState('');
 
   const refreshPresets = useCallback(async () => {
     if (!user) return;
@@ -190,13 +205,19 @@ export default function PolicyEditor() {
   const refreshSeasonState = useCallback(async (seasonId) => {
     if (!seasonId) {
       setSeasonState(null);
+      setSeasonMeta(null);
       return;
     }
     try {
-      const state = await api.getSeasonState(seasonId);
+      const [state, season] = await Promise.all([
+        api.getSeasonState(seasonId),
+        api.getSeason(seasonId),
+      ]);
       setSeasonState(state);
+      setSeasonMeta(season);
     } catch {
       setSeasonState(null);
+      setSeasonMeta(null);
     }
   }, []);
 
@@ -211,6 +232,7 @@ export default function PolicyEditor() {
         ]);
         if (cancelled) return;
         setRound(r);
+        setHasSubmittedPolicy(Boolean(pol));
         if (pol && pol.policy_type && pol.config) {
           setPolicyType(pol.policy_type);
           setConfig({ ...defaultConfig(pol.policy_type), ...pol.config });
@@ -230,18 +252,19 @@ export default function PolicyEditor() {
     };
   }, [roundId, refreshSeasonState]);
 
-  const handleSignalUpdate = async () => {
-    setSignalError('');
-    setSignalMsg('');
-    setSignalingUpdate(true);
+  const handleUnlockRoundPolicy = async () => {
+    if (!round?.season_id) return;
+    setUnlockError('');
+    setUnlockMsg('');
+    setUnlockingPolicy(true);
     try {
-      const res = await api.signalContractUpdate(roundId);
-      setSignalMsg(res?.message || 'Contract update signaled');
+      const res = await api.unlockContractChange(round.season_id, roundId);
+      setUnlockMsg(res?.message || 'Round unlocked for policy edits');
       if (round?.season_id) await refreshSeasonState(round.season_id);
     } catch (err) {
-      setSignalError(err.message || 'Could not signal contract update');
+      setUnlockError(err.message || 'Could not unlock policy edits');
     } finally {
-      setSignalingUpdate(false);
+      setUnlockingPolicy(false);
     }
   };
 
@@ -388,8 +411,25 @@ export default function PolicyEditor() {
         config,
       });
       setSubmitMsg(res?.message || 'Policy saved.');
+      setHasSubmittedPolicy(true);
     } catch (e) {
       setSubmitError(e.message || 'Submit failed');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const undoSubmitPolicy = async () => {
+    if (!window.confirm('Undo your submitted policy for this round?')) return;
+    setSubmitMsg(null);
+    setSubmitError(null);
+    setSubmitLoading(true);
+    try {
+      const res = await api.undoPolicySubmit(roundId);
+      setSubmitMsg(res?.message || 'Policy submission undone.');
+      setHasSubmittedPolicy(false);
+    } catch (e) {
+      setSubmitError(e.message || 'Could not undo submission');
     } finally {
       setSubmitLoading(false);
     }
@@ -428,19 +468,40 @@ export default function PolicyEditor() {
   const isProfessor = user?.role === 'professor';
   const isSeasonRound = Boolean(round.season_id);
   const isSeasonFollowUpRound = isSeasonRound && round.round_number > 1;
-  // Student is only editing if round 1 OR they signaled during round N-1. Professors
-  // can never submit a policy (they score rounds) so editing is disabled for them.
-  const seasonRoundUnlocked =
-    !isSeasonFollowUpRound || (seasonState?.current_round_signaled === true);
-  const canEdit = Boolean(user) && roundActive && !isProfessor && seasonRoundUnlocked;
+  const seasonRoundUnlocked = !isSeasonFollowUpRound || seasonState?.active_round_unlocked === true;
+  // Sandbox to try templates / backtest without spending contract updates — commit needs unlock.
+  const canExperiment = Boolean(user) && roundActive;
+  const canSubmitPolicy =
+    Boolean(user) && roundActive && (!isSeasonRound ? true : seasonRoundUnlocked);
 
-  const canSignalNextRound =
+  const canSpendContractUpdate =
     isSeasonRound &&
     roundActive &&
-    !isProfessor &&
-    !!seasonState?.next_round_id &&
-    !seasonState?.next_round_signaled &&
-    (seasonState?.contract_updates_remaining ?? 0) > 0;
+    isSeasonFollowUpRound &&
+    !seasonRoundUnlocked &&
+    Boolean(seasonState?.can_unlock_active_round);
+
+  const canScoreSoloRound =
+    hasSubmittedPolicy &&
+    Boolean(round?.season_id) &&
+    roundActive &&
+    Boolean(seasonMeta?.owner_user_id) &&
+    seasonMeta.owner_user_id === user?.user_id &&
+    (seasonMeta?.season_scope === 'sandbox' || Boolean(seasonMeta?.source_template_id));
+
+  const handleScoreSoloRound = async () => {
+    if (!round?.season_id) return;
+    setSubmitError(null);
+    setSubmitLoading(true);
+    try {
+      await api.advanceSeason(round.season_id);
+      navigate(`/round/${roundId}/results`);
+    } catch (e) {
+      setSubmitError(e.message || 'Could not score round');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
 
   return (
     <div className="text-slate-200">
@@ -459,7 +520,7 @@ export default function PolicyEditor() {
           </p>
         )}
 
-        {isSeasonRound && !isProfessor && (
+        {isSeasonRound && (
           <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs">
             {seasonState ? (
               <span className="text-slate-300">
@@ -472,38 +533,36 @@ export default function PolicyEditor() {
             ) : (
               <span className="text-slate-500">Loading contract updates…</span>
             )}
-            {roundActive && !seasonRoundUnlocked && (
+            {roundActive && !seasonRoundUnlocked && isSeasonFollowUpRound && (
               <span className="rounded-full border border-slate-600 px-2 py-0.5 text-slate-400">
-                Policy inherited from last round (no signal given)
+                Locked for submission · explore freely · spend a contract change only to submit
               </span>
             )}
-            {roundActive && seasonState?.next_round_id && (
+            {roundActive && isSeasonFollowUpRound && (
               <div className="flex items-center gap-2">
-                {seasonState.next_round_signaled ? (
+                {seasonRoundUnlocked ? (
                   <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-400">
-                    Next round unlocked
+                    Unlocked for this round
                   </span>
                 ) : (
                   <button
                     type="button"
-                    onClick={handleSignalUpdate}
-                    disabled={!canSignalNextRound || signalingUpdate}
+                    onClick={handleUnlockRoundPolicy}
+                    disabled={!canSpendContractUpdate || unlockingPolicy}
                     className="rounded-lg border border-amber-500/50 bg-slate-900 px-3 py-1 text-xs font-medium text-amber-500 hover:bg-amber-500/10 disabled:opacity-40"
                     title={
                       (seasonState?.contract_updates_remaining ?? 0) === 0
                         ? 'No contract updates remaining.'
-                        : 'Lock in an update so you can edit next round.'
+                        : 'Unlocks Submit / Undo Submit for this round. Exploring and backtests do not spend tokens.'
                     }
                   >
-                    {signalingUpdate
-                      ? 'Signaling…'
-                      : `Request contract update for round ${round.round_number + 1}`}
+                    {unlockingPolicy ? 'Unlocking…' : 'Spend Contract Change & Unlock'}
                   </button>
                 )}
               </div>
             )}
-            {signalMsg && <span className="text-emerald-400">{signalMsg}</span>}
-            {signalError && <span className="text-red-400">{signalError}</span>}
+            {unlockMsg && <span className="text-emerald-400">{unlockMsg}</span>}
+            {unlockError && <span className="text-red-400">{unlockError}</span>}
           </div>
         )}
       </div>
@@ -591,6 +650,13 @@ export default function PolicyEditor() {
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-amber-500">
             Policy designer
           </h2>
+          {isSeasonFollowUpRound && roundActive && !seasonRoundUnlocked && (
+            <p className="mb-3 text-xs text-slate-500">
+              You can experiment with any policy settings and Run Backtest anytime. Spending a contract
+              change only unlocks <span className="text-slate-400">Submit Policy</span> and{' '}
+              <span className="text-slate-400">Undo Submit</span> for this round.
+            </p>
+          )}
           {!policyLoaded && (
             <p className="mb-2 text-xs text-slate-500">Loading your saved policy…</p>
           )}
@@ -604,7 +670,7 @@ export default function PolicyEditor() {
                 form below (does not submit to this round).
               </p>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                <div className="min-w-0 flex-1 sm:min-w-[200px]">
+                <div className="min-w-0 sm:w-[180px] sm:flex-none">
                   <label htmlFor="preset-load" className="block text-xs text-slate-400">
                     Load preset
                   </label>
@@ -624,7 +690,7 @@ export default function PolicyEditor() {
                 </div>
                 <form
                   onSubmit={handleSaveToLibrary}
-                  className="flex min-w-0 flex-1 flex-wrap items-end gap-2 sm:flex-[2]"
+                  className="flex min-w-0 flex-1 flex-wrap items-end gap-2 sm:min-w-[340px]"
                 >
                   <div className="min-w-0 flex-1">
                     <label htmlFor="preset-name" className="block text-xs text-slate-400">
@@ -686,7 +752,7 @@ export default function PolicyEditor() {
                   className="sr-only"
                   checked={policyType === t.id}
                   onChange={() => onTemplateChange(t.id)}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
                 <span className="text-sm font-medium text-slate-100">{t.label}</span>
                 <p className="mt-1 text-xs leading-snug text-slate-400">{t.desc}</p>
@@ -704,7 +770,7 @@ export default function PolicyEditor() {
                   step={10}
                   value={config.target_level ?? 200}
                   onChange={(v) => updateConfig({ target_level: v })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
                 <SelectField
                   label="Insurance mode"
@@ -712,7 +778,7 @@ export default function PolicyEditor() {
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
               </>
             )}
@@ -724,7 +790,7 @@ export default function PolicyEditor() {
                   options={SERVICE_LEVELS.map(String)}
                   formatOption={formatServiceLevelOption}
                   onChange={(v) => updateConfig({ target_service_level: Number(v) })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
                 <RangeField
                   label="Lookback days"
@@ -733,7 +799,7 @@ export default function PolicyEditor() {
                   step={1}
                   value={config.lookback_days ?? 14}
                   onChange={(v) => updateConfig({ lookback_days: v })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
                 <SelectField
                   label="Insurance mode"
@@ -741,7 +807,7 @@ export default function PolicyEditor() {
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
               </>
             )}
@@ -754,7 +820,7 @@ export default function PolicyEditor() {
                   step={5}
                   value={config.reorder_point ?? 120}
                   onChange={(v) => updateConfig({ reorder_point: v })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
                 <RangeField
                   label="Order quantity (Q)"
@@ -763,7 +829,7 @@ export default function PolicyEditor() {
                   step={10}
                   value={config.order_quantity ?? 150}
                   onChange={(v) => updateConfig({ order_quantity: v })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
                 <SelectField
                   label="Insurance mode"
@@ -771,7 +837,7 @@ export default function PolicyEditor() {
                   value={config.insurance_mode || 'never'}
                   options={INSURANCE_MODES}
                   onChange={(v) => updateConfig({ insurance_mode: v })}
-                  disabled={!canEdit}
+                  disabled={!canExperiment}
                 />
               </>
             )}
@@ -786,14 +852,42 @@ export default function PolicyEditor() {
             >
               {backtestLoading ? 'Running…' : 'Run Backtest'}
             </button>
+            {isSeasonFollowUpRound && !seasonRoundUnlocked && (
+              <button
+                type="button"
+                onClick={handleUnlockRoundPolicy}
+                disabled={!canSpendContractUpdate || submitLoading || unlockingPolicy}
+                className="rounded-lg border border-sky-500/50 bg-slate-900 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-500/10 disabled:opacity-40"
+              >
+                {unlockingPolicy ? 'Unlocking…' : 'Spend Contract Change'}
+              </button>
+            )}
             <button
               type="button"
               onClick={submitPolicy}
-              disabled={!canEdit || submitLoading}
+                  disabled={!canSubmitPolicy || submitLoading}
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-400 disabled:opacity-40"
             >
               {submitLoading ? 'Saving…' : 'Submit Policy'}
             </button>
+            <button
+              type="button"
+              onClick={undoSubmitPolicy}
+              disabled={!canSubmitPolicy || !hasSubmittedPolicy || submitLoading}
+              className="rounded-lg border border-red-500/50 bg-slate-900 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+            >
+              {submitLoading ? 'Undoing…' : 'Undo Submit'}
+            </button>
+            {canScoreSoloRound && (
+              <button
+                type="button"
+                onClick={handleScoreSoloRound}
+                disabled={submitLoading}
+                className="rounded-lg border border-emerald-500/50 bg-slate-900 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40"
+              >
+                {submitLoading ? 'Scoring…' : 'Score Round'}
+              </button>
+            )}
           </div>
           {backtestError && (
             <p className="mt-2 text-sm text-red-400">{backtestError}</p>
@@ -892,6 +986,48 @@ export default function PolicyEditor() {
                     ))}
                   </ul>
                 )}
+
+              <h3 className="mt-6 text-sm font-medium text-amber-500">Daily log</h3>
+              <div className="mt-2 max-h-[28rem] overflow-auto rounded-lg border border-slate-700">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead className="sticky top-0 bg-slate-900/95 text-xs uppercase tracking-wide text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2">Day</th>
+                      <th className="px-3 py-2">Demand</th>
+                      <th className="px-3 py-2">Sold</th>
+                      <th className="px-3 py-2">Missed</th>
+                      <th className="px-3 py-2">Ordered</th>
+                      <th className="px-3 py-2">Inventory</th>
+                      <th className="px-3 py-2">P&amp;L</th>
+                      <th className="px-3 py-2">Event</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700">
+                    {(Array.isArray(backtestResult.daily_log) ? backtestResult.daily_log : []).map(
+                      (row) => (
+                        <tr key={row.day} className="hover:bg-slate-700/40">
+                          <td className="px-3 py-2 tabular-nums text-slate-200">{row.day}</td>
+                          <td className="px-3 py-2 tabular-nums">{row.demand}</td>
+                          <td className="px-3 py-2 tabular-nums">{row.sold}</td>
+                          <td className="px-3 py-2 tabular-nums">{row.unfulfilled}</td>
+                          <td className="px-3 py-2 tabular-nums">{row.ordered}</td>
+                          <td className="px-3 py-2 tabular-nums">{row.inventory_end}</td>
+                          <td
+                            className={`px-3 py-2 tabular-nums font-medium ${profitClass(
+                              row.daily_profit,
+                            )}`}
+                          >
+                            {formatMoney(row.daily_profit)}
+                          </td>
+                          <td className="px-3 py-2 text-amber-500/90">
+                            {row.black_swan_event ? String(row.black_swan_event) : '—'}
+                          </td>
+                        </tr>
+                      ),
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </>
           )}
         </section>

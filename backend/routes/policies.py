@@ -6,10 +6,11 @@ from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import (
-    ContractUpdateSignalRow,
     PolicyRow,
+    RoundEditUnlockRow,
     RoomMemberRow,
     RoundRow,
+    SeasonRow,
     UserRow,
     get_db,
 )
@@ -31,6 +32,17 @@ class BacktestRequest(BaseModel):
     config: dict
 
 
+def _can_edit_season_round(db: Session, user: UserRow, rnd: RoundRow) -> bool:
+    if not rnd.season_id or rnd.round_number <= 1 or not bool(rnd.locked_for_updates):
+        return True
+    unlock = (
+        db.query(RoundEditUnlockRow)
+        .filter(RoundEditUnlockRow.user_id == user.id, RoundEditUnlockRow.round_id == rnd.id)
+        .first()
+    )
+    return unlock is not None
+
+
 @router.put("")
 def save_policy(
     body: SavePolicyRequest,
@@ -44,29 +56,24 @@ def save_policy(
         raise HTTPException(400, "Round is no longer accepting submissions")
 
     # Verify user is a member of this room
-    member = (
-        db.query(RoomMemberRow)
-        .filter(RoomMemberRow.user_id == user.id, RoomMemberRow.room_id == rnd.room_id)
-        .first()
-    )
-    if not member:
-        raise HTTPException(403, "Not a member of this room")
-
-    # Season rounds past round 1 require a signal from the previous round.
-    if rnd.season_id and rnd.round_number > 1:
-        signal = (
-            db.query(ContractUpdateSignalRow)
-            .filter(
-                ContractUpdateSignalRow.user_id == user.id,
-                ContractUpdateSignalRow.target_round_id == rnd.id,
-            )
+    if rnd.room_id:
+        member = (
+            db.query(RoomMemberRow)
+            .filter(RoomMemberRow.user_id == user.id, RoomMemberRow.room_id == rnd.room_id)
             .first()
         )
-        if not signal:
-            raise HTTPException(
-                403,
-                "Policy locked. Signal a contract update during the previous round to edit this one.",
-            )
+        if not member:
+            raise HTTPException(403, "Not a member of this room")
+    elif rnd.season_id:
+        season = db.query(SeasonRow).filter(SeasonRow.id == rnd.season_id).first()
+        if not season or season.owner_user_id != user.id:
+            raise HTTPException(403, "Not your season")
+
+    if not _can_edit_season_round(db, user, rnd):
+        raise HTTPException(
+            403,
+            "Policy locked. Spend a contract update token in this round to unlock editing.",
+        )
 
     # Validate the policy compiles
     try:
@@ -119,6 +126,51 @@ def get_my_policy(
         "config": policy.config,
         "submitted_at": policy.submitted_at.isoformat() if policy.submitted_at else None,
     }
+
+
+@router.delete("/{round_id}")
+def delete_my_policy(
+    round_id: str,
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
+    if not rnd:
+        raise HTTPException(404, "Round not found")
+    if rnd.status != "active":
+        raise HTTPException(400, "Round is no longer accepting submissions")
+
+    # Verify user is a member of this room / owner of private sandbox season.
+    if rnd.room_id:
+        member = (
+            db.query(RoomMemberRow)
+            .filter(RoomMemberRow.user_id == user.id, RoomMemberRow.room_id == rnd.room_id)
+            .first()
+        )
+        if not member:
+            raise HTTPException(403, "Not a member of this room")
+    elif rnd.season_id:
+        season = db.query(SeasonRow).filter(SeasonRow.id == rnd.season_id).first()
+        if not season or season.owner_user_id != user.id:
+            raise HTTPException(403, "Not your season")
+
+    if not _can_edit_season_round(db, user, rnd):
+        raise HTTPException(
+            403,
+            "Policy locked. Spend a contract update token in this round to unlock editing.",
+        )
+
+    policy = (
+        db.query(PolicyRow)
+        .filter(PolicyRow.user_id == user.id, PolicyRow.round_id == round_id)
+        .first()
+    )
+    if not policy:
+        raise HTTPException(404, "No submitted policy to undo for this round")
+
+    db.delete(policy)
+    db.commit()
+    return {"message": "Policy submission undone"}
 
 
 @router.post("/backtest")
