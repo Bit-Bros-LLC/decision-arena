@@ -3,14 +3,18 @@ import { Link, useParams } from 'react-router-dom';
 import {
   BarChart,
   Bar,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
   Cell,
+  ReferenceLine,
+  Legend,
 } from 'recharts';
-import { api } from '../api';
+import { api, getUser } from '../api';
 
 function formatMoney(n) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -33,9 +37,14 @@ const chartTooltipStyle = {
 
 export default function RoundResults() {
   const { roundId } = useParams();
+  const user = getUser();
   const [data, setData] = useState(null);
+  const [round, setRound] = useState(null);
+  const [season, setSeason] = useState(null);
+  const [isSoloSeasonRound, setIsSoloSeasonRound] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [undoBusy, setUndoBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,8 +52,28 @@ export default function RoundResults() {
       setLoading(true);
       setError(null);
       try {
-        const res = await api.getMyResults(roundId);
+        const [res, roundRes] = await Promise.all([
+          api.getMyResults(roundId),
+          api.getRound(roundId),
+        ]);
         if (!cancelled) setData(res);
+        if (!cancelled) setRound(roundRes);
+        if (!cancelled && roundRes?.season_id) {
+          try {
+            const seasonRes = await api.getSeason(roundRes.season_id);
+            if (!cancelled) setSeason(seasonRes);
+            const isSolo =
+              seasonRes?.owner_user_id === user?.user_id &&
+              (seasonRes?.season_scope === 'sandbox' || Boolean(seasonRes?.source_template_id));
+            setIsSoloSeasonRound(Boolean(isSolo));
+          } catch {
+            setIsSoloSeasonRound(false);
+            setSeason(null);
+          }
+        } else if (!cancelled) {
+          setIsSoloSeasonRound(false);
+          setSeason(null);
+        }
       } catch (e) {
         if (!cancelled) setError(e.message || 'Failed to load results');
       } finally {
@@ -65,15 +94,19 @@ export default function RoundResults() {
   }
 
   if (error) {
+    const showLeaderboardFromError =
+      !isSoloSeasonRound || (season && season.season_scope === 'room');
     return (
       <div className="p-6">
         <p className="text-red-400">{error}</p>
-        <Link
-          to={`/leaderboard/${roundId}`}
-          className="mt-4 inline-block text-amber-500 underline hover:text-amber-400"
-        >
-          Back to leaderboard
-        </Link>
+        {showLeaderboardFromError && (
+          <Link
+            to={`/leaderboard/${roundId}`}
+            className="mt-4 inline-block text-amber-500 underline hover:text-amber-400"
+          >
+            Back to leaderboard
+          </Link>
+        )}
       </div>
     );
   }
@@ -83,19 +116,96 @@ export default function RoundResults() {
     day: row.day,
     daily_profit: row.daily_profit,
   }));
+  const historical = Array.isArray(round?.historical_data) ? round.historical_data : [];
+  const actual = Array.isArray(round?.actual_data) ? round.actual_data : [];
+  const scenarioChartData = [
+    ...historical.map((row, i) => ({
+      x: i + 1,
+      demandHistorical: Number.isFinite(Number(row?.demand)) ? Number(row.demand) : null,
+      demandActual: null,
+    })),
+    ...actual.map((row, i) => ({
+      x: historical.length + i + 1,
+      demandHistorical: null,
+      demandActual: Number.isFinite(Number(row?.demand)) ? Number(row.demand) : null,
+    })),
+  ];
+  const scenarioBoundary = historical.length + 0.5;
 
   const slPct = (data.service_level ?? 0) * 100;
+  const isClassSeason = season?.season_scope === 'room';
+  const seasonTarget =
+    season?.id && season?.room_id
+      ? `/room/${season.room_id}/season/${season.id}`
+      : season?.id
+        ? `/season-sprint/${season.id}`
+        : null;
+  const latestScoredRoundNumber = Array.isArray(season?.rounds)
+    ? season.rounds
+        .filter((r) => r.status === 'scored')
+        .reduce((max, r) => Math.max(max, Number(r.round_number) || 0), 0)
+    : 0;
+  const canUndoScore =
+    isSoloSeasonRound &&
+    round?.status === 'scored' &&
+    Number(round?.round_number) === latestScoredRoundNumber &&
+    !undoBusy;
+
+  const handleUndoScore = async () => {
+    if (!season?.id) return;
+    if (!window.confirm('Undo scoring for this round and reopen it for policy edits?')) return;
+    setUndoBusy(true);
+    setError(null);
+    try {
+      await api.undoLatestSeasonAdvance(season.id);
+      window.location.href = `/round/${roundId}`;
+    } catch (e) {
+      setError(e.message || 'Could not undo scoring');
+    } finally {
+      setUndoBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-2xl font-semibold text-slate-100">Round results</h1>
-          <Link
-            to={`/leaderboard/${roundId}`}
-            className="rounded-lg border border-amber-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-amber-500 transition hover:bg-slate-700"
-          >
-            Leaderboard
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {canUndoScore && (
+              <button
+                type="button"
+                onClick={handleUndoScore}
+                disabled={undoBusy}
+                className="rounded-lg border border-red-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-red-400 transition hover:bg-slate-700 disabled:opacity-40"
+              >
+                {undoBusy ? 'Undoing…' : 'Undo Score'}
+              </button>
+            )}
+            {seasonTarget && (
+              <Link
+                to={seasonTarget}
+                className="rounded-lg border border-emerald-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-emerald-400 transition hover:bg-slate-700"
+              >
+                Back to season rounds
+              </Link>
+            )}
+            {round?.season_id && isClassSeason && (
+              <Link
+                to={`/leaderboard/season/${round.season_id}`}
+                className="rounded-lg border border-slate-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-700"
+              >
+                Season standings
+              </Link>
+            )}
+            {(!round?.season_id || isClassSeason) && (
+              <Link
+                to={`/leaderboard/${roundId}`}
+                className="rounded-lg border border-amber-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-amber-500 transition hover:bg-slate-700"
+              >
+                Round leaderboard
+              </Link>
+            )}
+          </div>
         </div>
 
         <section className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg">
@@ -134,6 +244,52 @@ export default function RoundResults() {
               </dd>
             </div>
           </dl>
+        </section>
+
+        <section className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg">
+          <h2 className="mb-4 text-lg font-medium text-amber-500">Scenario review</h2>
+          <p className="mb-4 text-xs text-slate-500">
+            Historical period (amber) and scored period (sky), plus the exact data used for this round.
+          </p>
+          <div className="h-72 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={scenarioChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="x" tick={{ fill: '#94a3b8', fontSize: 12 }} stroke="#475569" />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 12 }} stroke="#475569" />
+                <Tooltip contentStyle={chartTooltipStyle} labelFormatter={(label) => `Day ${label}`} />
+                <Legend wrapperStyle={{ color: '#94a3b8', fontSize: '12px' }} />
+                <ReferenceLine
+                  x={scenarioBoundary}
+                  stroke="#94a3b8"
+                  strokeDasharray="4 4"
+                  label={{ value: 'Scored period starts', position: 'top', fill: '#94a3b8', fontSize: 11 }}
+                />
+                <Line type="monotone" dataKey="demandHistorical" name="Historical demand" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls={false} />
+                <Line type="monotone" dataKey="demandActual" name="Actual demand" stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <details className="group rounded-lg border border-slate-700 bg-slate-900/40">
+              <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm font-medium text-slate-200 marker:content-none">
+                <span>Historical data</span>
+                <span className="text-slate-400 transition-transform group-open:rotate-90">▶</span>
+              </summary>
+              <pre className="max-h-56 overflow-auto border-t border-slate-700 p-3 text-xs text-slate-300">
+                {JSON.stringify(historical, null, 2)}
+              </pre>
+            </details>
+            <details className="group rounded-lg border border-slate-700 bg-slate-900/40">
+              <summary className="flex cursor-pointer items-center justify-between px-3 py-2 text-sm font-medium text-slate-200 marker:content-none">
+                <span>Actual scored data</span>
+                <span className="text-slate-400 transition-transform group-open:rotate-90">▶</span>
+              </summary>
+              <pre className="max-h-56 overflow-auto border-t border-slate-700 p-3 text-xs text-slate-300">
+                {JSON.stringify(actual, null, 2)}
+              </pre>
+            </details>
+          </div>
         </section>
 
         <section className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg">
@@ -214,6 +370,16 @@ export default function RoundResults() {
             </table>
           </div>
         </section>
+        {seasonTarget && (
+          <div className="flex justify-end">
+            <Link
+              to={seasonTarget}
+              className="rounded-lg border border-emerald-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-emerald-400 transition hover:bg-slate-700"
+            >
+              Back to season rounds
+            </Link>
+          </div>
+        )}
     </div>
   );
 }

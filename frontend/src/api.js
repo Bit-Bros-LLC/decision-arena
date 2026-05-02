@@ -69,6 +69,7 @@ export const api = {
 
   savePolicy: (body) => request('/policies', { method: 'PUT', body: JSON.stringify(body) }),
   getMyPolicy: (roundId) => request(`/policies/${roundId}`),
+  undoPolicySubmit: (roundId) => request(`/policies/${roundId}`, { method: 'DELETE' }),
   listPolicyPresets: () => request('/policy-presets'),
   savePolicyPreset: (body) =>
     request('/policy-presets', { method: 'POST', body: JSON.stringify(body) }),
@@ -77,7 +78,29 @@ export const api = {
 
   getMyResults: (roundId) => request(`/results/${roundId}`),
   getRoundLeaderboard: (roundId) => request(`/leaderboard/${roundId}`),
-  getSeasonLeaderboard: (roomId) => request(`/leaderboard/season/${roomId}`),
+  getSeasonLeaderboard: (seasonId) => request(`/leaderboard/season/${seasonId}`),
+  getTemplateCohortLeaderboard: (roomId, templateId) =>
+    request(`/leaderboard/room/${roomId}/template/${templateId}/cohort`),
+
+  listSeasonPresets: () => request('/seasons/presets'),
+  previewSeason: (body) => request('/seasons/preview', { method: 'POST', body: JSON.stringify(body) }),
+  listRoomSeasons: (roomId) => request(`/seasons/room/${roomId}`),
+  listSandboxSeasons: () => request('/seasons/sandbox'),
+  listMySoloSeasons: () => request('/seasons/my-solo'),
+  getSeason: (seasonId) => request(`/seasons/${seasonId}`),
+  createSeason: (body) => request('/seasons', { method: 'POST', body: JSON.stringify(body) }),
+  activateSeason: (seasonId) => request(`/seasons/${seasonId}/activate`, { method: 'POST' }),
+  advanceSeason: (seasonId) => request(`/seasons/${seasonId}/advance`, { method: 'POST' }),
+  undoLatestSeasonAdvance: (seasonId) =>
+    request(`/seasons/${seasonId}/undo-latest-advance`, { method: 'POST' }),
+  getSeasonState: (seasonId) => request(`/seasons/${seasonId}/my-state`),
+  unlockContractChange: (seasonId, roundId) =>
+    request(`/seasons/${seasonId}/rounds/${roundId}/unlock`, { method: 'POST' }),
+  listRoomSoloTemplates: (roomId) => request(`/seasons/room/${roomId}/solo-templates`),
+  createRoomSoloTemplate: (roomId, body) =>
+    request(`/seasons/room/${roomId}/solo-templates`, { method: 'POST', body: JSON.stringify(body) }),
+  instantiateRoomSoloTemplate: (roomId, templateId) =>
+    request(`/seasons/room/${roomId}/solo-templates/${templateId}/instantiate`, { method: 'POST' }),
 
   getLessonProgress: () => request('/lessons/progress'),
   completeLesson: (slug) => request(`/lessons/${slug}/complete`, { method: 'POST' }),

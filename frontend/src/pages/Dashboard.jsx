@@ -143,6 +143,22 @@ export default function Dashboard() {
         )}
 
         <section className="rounded-xl border border-slate-700 bg-slate-800 p-6">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-medium text-slate-200">Private Solo Seasons</h2>
+              <p className="text-sm text-slate-400">Create a solo season not affiliated with any class.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/season-sprint/new')}
+              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-400"
+            >
+              Create Private Solo Season
+            </button>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-slate-700 bg-slate-800 p-6">
           <h2 className="text-lg font-medium text-slate-200">Join room</h2>
           <p className="mt-1 text-sm text-slate-400">
             Enter the room ID and invite code from your instructor.

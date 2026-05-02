@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from auth import get_current_user, require_professor
 from database import (
     UserRow, RoomRow, RoomMemberRow, RoundRow,
-    PolicyRow, ResultRow, get_db,
+    PolicyRow, ResultRow, SeasonRow, get_db,
 )
 from simulation.engine import run_simulation
 from simulation.policies import build_policy_fn
@@ -36,6 +36,7 @@ class UpdateRoundRequest(BaseModel):
 class RoundResponse(BaseModel):
     id: str
     room_id: str
+    season_id: str | None
     round_number: int
     historical_data: list[dict]
     actual_data: list[dict] | None  # None until scored
@@ -43,6 +44,7 @@ class RoundResponse(BaseModel):
     starting_inventory: int
     deadline: str
     status: str
+    locked_for_updates: bool = False
 
 
 @router.post("", response_model=RoundResponse)
@@ -121,12 +123,17 @@ def get_round(
     if not rnd:
         raise HTTPException(404, "Round not found")
 
-    is_professor = (
-        db.query(RoomRow)
-        .filter(RoomRow.id == rnd.room_id, RoomRow.professor_id == user.id)
-        .first()
-        is not None
-    )
+    is_professor = False
+    if rnd.room_id:
+        is_professor = (
+            db.query(RoomRow)
+            .filter(RoomRow.id == rnd.room_id, RoomRow.professor_id == user.id)
+            .first()
+            is not None
+        )
+    elif rnd.season_id:
+        season = db.query(SeasonRow).filter(SeasonRow.id == rnd.season_id).first()
+        is_professor = bool(season and season.owner_user_id == user.id)
     if rnd.status == "draft" and not is_professor:
         raise HTTPException(403, "This round is not yet active")
 
@@ -293,6 +300,7 @@ def _round_response(rnd: RoundRow, reveal_actuals: bool) -> dict:
     return {
         "id": rnd.id,
         "room_id": rnd.room_id,
+        "season_id": rnd.season_id,
         "round_number": rnd.round_number,
         "historical_data": rnd.historical_data,
         "actual_data": rnd.actual_data if reveal_actuals else None,
@@ -300,4 +308,5 @@ def _round_response(rnd: RoundRow, reveal_actuals: bool) -> dict:
         "starting_inventory": rnd.starting_inventory,
         "deadline": rnd.deadline.isoformat() if rnd.deadline else "",
         "status": rnd.status,
+        "locked_for_updates": bool(rnd.locked_for_updates),
     }

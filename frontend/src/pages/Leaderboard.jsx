@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -77,16 +77,20 @@ export default function Leaderboard() {
   const params = useParams();
   const navigate = useNavigate();
   const roundId = params.roundId;
-  const seasonRoomId = params.roomId;
+  const seasonIdParam = params.seasonId;
+  const roomIdParam = params.roomId;
+  const templateIdParam = params.templateId;
+  const isCohortRoute = Boolean(roomIdParam && templateIdParam);
 
-  /** Season route is `/leaderboard/season/:roomId` (only `roomId` in params). */
-  const isSeasonRoute = Boolean(seasonRoomId);
+  /** Season route is `/leaderboard/season/:seasonId`. Cohort: `/leaderboard/room/.../template/.../cohort`. */
+  const isSeasonRoute = Boolean(seasonIdParam) && !isCohortRoute;
 
   const [roundRows, setRoundRows] = useState(null);
   const [seasonPayload, setSeasonPayload] = useState(null);
-  const [roomIdForSeason, setRoomIdForSeason] = useState(seasonRoomId || null);
+  const [seasonIdFromRound, setSeasonIdFromRound] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [unavailableNonClassSolo, setUnavailableNonClassSolo] = useState(false);
 
   const me = getUser();
 
@@ -95,22 +99,58 @@ export default function Leaderboard() {
     (async () => {
       setLoading(true);
       setError(null);
+      setUnavailableNonClassSolo(false);
       try {
-        if (isSeasonRoute && seasonRoomId) {
-          const s = await api.getSeasonLeaderboard(seasonRoomId);
+        if (isCohortRoute && roomIdParam && templateIdParam) {
+          const s = await api.getTemplateCohortLeaderboard(roomIdParam, templateIdParam);
           if (!cancelled) {
             setSeasonPayload(s);
             setRoundRows(null);
+            setSeasonIdFromRound(null);
+          }
+        } else if (isSeasonRoute && seasonIdParam) {
+          const meta = await api.getSeason(seasonIdParam);
+          if (meta?.season_scope === 'sandbox') {
+            if (!cancelled) {
+              setUnavailableNonClassSolo(true);
+              setSeasonPayload(null);
+              setRoundRows(null);
+              setSeasonIdFromRound(null);
+            }
+          } else {
+            const s = await api.getSeasonLeaderboard(seasonIdParam);
+            if (!cancelled) {
+              setSeasonPayload(s);
+              setRoundRows(null);
+              setSeasonIdFromRound(null);
+            }
           }
         } else if (roundId) {
-          const [lb, rnd] = await Promise.all([
-            api.getRoundLeaderboard(roundId),
-            api.getRound(roundId),
-          ]);
-          if (!cancelled) {
-            setRoundRows(lb);
-            setRoomIdForSeason(rnd?.room_id ?? null);
-            setSeasonPayload(null);
+          const rnd = await api.getRound(roundId);
+          if (rnd?.season_id) {
+            const meta = await api.getSeason(rnd.season_id);
+            if (meta?.season_scope === 'sandbox') {
+              if (!cancelled) {
+                setUnavailableNonClassSolo(true);
+                setRoundRows(null);
+                setSeasonIdFromRound(rnd.season_id);
+                setSeasonPayload(null);
+              }
+            } else {
+              const lb = await api.getRoundLeaderboard(roundId);
+              if (!cancelled) {
+                setRoundRows(lb);
+                setSeasonIdFromRound(rnd.season_id);
+                setSeasonPayload(null);
+              }
+            }
+          } else {
+            const lb = await api.getRoundLeaderboard(roundId);
+            if (!cancelled) {
+              setRoundRows(lb);
+              setSeasonIdFromRound(null);
+              setSeasonPayload(null);
+            }
           }
         }
       } catch (e) {
@@ -122,7 +162,7 @@ export default function Leaderboard() {
     return () => {
       cancelled = true;
     };
-  }, [roundId, seasonRoomId, isSeasonRoute]);
+  }, [roundId, seasonIdParam, isSeasonRoute, isCohortRoute, roomIdParam, templateIdParam]);
 
   const defaultRoundIdFromSeason = useMemo(() => {
     const rounds = seasonPayload?.rounds;
@@ -131,6 +171,7 @@ export default function Leaderboard() {
   }, [seasonPayload]);
 
   const seasonColumns = seasonPayload?.rounds ?? [];
+  const isCohortPayload = seasonPayload?.cohort === true;
 
   const goRoundTab = () => {
     if (roundId && !isSeasonRoute) {
@@ -143,37 +184,62 @@ export default function Leaderboard() {
   };
 
   const goSeasonTab = () => {
-    const rid = roomIdForSeason || seasonRoomId;
-    if (!rid) return;
-    navigate(`/leaderboard/season/${rid}`);
+    const sid = seasonIdFromRound || seasonIdParam;
+    if (!sid) return;
+    navigate(`/leaderboard/season/${sid}`);
   };
 
   return (
     <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-slate-100">Leaderboard</h1>
-          <div className="flex gap-2">
-            <TabButton
-              active={!isSeasonRoute}
-              onClick={goRoundTab}
-              disabled={isSeasonRoute && !defaultRoundIdFromSeason}
-            >
-              Round
-            </TabButton>
-            <TabButton
-              active={isSeasonRoute}
-              onClick={goSeasonTab}
-              disabled={!isSeasonRoute && !roomIdForSeason && !seasonRoomId}
-            >
-              Season
-            </TabButton>
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-100">
+              {isCohortRoute ? 'Template cohort standings' : 'Leaderboard'}
+            </h1>
+            {isCohortRoute && roomIdParam && (
+              <Link
+                to={`/room/${roomIdParam}`}
+                className="mt-1 block text-sm text-amber-500/90 hover:text-amber-400"
+              >
+                ← Back to room
+              </Link>
+            )}
+            {isCohortPayload && seasonPayload?.template_name && (
+              <p className="mt-1 text-sm text-slate-400">{seasonPayload.template_name}</p>
+            )}
           </div>
+          {!isCohortRoute && !unavailableNonClassSolo && (
+            <div className="flex gap-2">
+              <TabButton
+                active={!isSeasonRoute}
+                onClick={goRoundTab}
+                disabled={isSeasonRoute && !defaultRoundIdFromSeason}
+              >
+                Round
+              </TabButton>
+              <TabButton
+                active={isSeasonRoute}
+                onClick={goSeasonTab}
+                disabled={!isSeasonRoute && !seasonIdFromRound && !seasonIdParam}
+              >
+                Season
+              </TabButton>
+            </div>
+          )}
         </div>
 
         {loading && <p className="text-amber-500">Loading…</p>}
         {error && <p className="text-red-400">{error}</p>}
 
-        {!loading && !error && !isSeasonRoute && roundRows && (
+        {!loading && !error && unavailableNonClassSolo && (
+          <p className="text-slate-300">
+            Leaderboards and season standings are not available for private solo practice. Class
+            seasons in a room include standings for you and your section; open a class from the
+            dashboard for those.
+          </p>
+        )}
+
+        {!loading && !error && !unavailableNonClassSolo && !isSeasonRoute && roundRows && (
           <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800 shadow-lg">
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-slate-700 text-xs uppercase tracking-wide text-slate-400">
@@ -222,20 +288,27 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {!loading && !error && isSeasonRoute && seasonPayload && (
+        {!loading && !error && !unavailableNonClassSolo && (isCohortRoute || isSeasonRoute) && seasonPayload && (
           <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800 shadow-lg">
             {seasonColumns.length === 0 ? (
-              <p className="p-6 text-slate-400">No scored rounds in this room yet.</p>
+              <p className="p-6 text-slate-400">
+                {isCohortPayload
+                  ? 'No one has scored results for this template in the room yet.'
+                  : 'No scored rounds in this season yet.'}
+              </p>
             ) : (
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-slate-700 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="sticky left-0 z-10 bg-slate-800 px-4 py-3">Rank</th>
                     <th className="sticky left-12 z-10 bg-slate-800 px-4 py-3 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.4)]">
-                      Student
+                      Player
                     </th>
                     {seasonColumns.map((r) => (
-                      <th key={r.id} className="px-4 py-3 whitespace-nowrap">
+                      <th
+                        key={r.id != null ? r.id : `rn-${r.round_number}`}
+                        className="px-4 py-3 whitespace-nowrap"
+                      >
                         R{r.round_number}
                       </th>
                     ))}
@@ -246,8 +319,9 @@ export default function Leaderboard() {
                   {(seasonPayload.standings || []).map((row) => {
                     const highlight =
                       me && row.is_me ? 'bg-amber-500/15 ring-1 ring-amber-500/40' : '';
+                    const rowKey = row.user_id ?? `peer-${row.rank}`;
                     return (
-                      <tr key={row.user_id} className={highlight}>
+                      <tr key={rowKey} className={highlight}>
                         <td className="sticky left-0 z-10 bg-slate-800 px-4 py-3 tabular-nums font-medium">
                           {row.rank}
                         </td>
@@ -258,11 +332,17 @@ export default function Leaderboard() {
                           )}
                         </td>
                         {seasonColumns.map((r) => {
-                          const cell = row.rounds?.[r.id];
-                          const p = cell?.profit;
+                          let p = null;
+                          if (isCohortPayload) {
+                            const pr = row.per_round?.[String(r.round_number)];
+                            p = pr != null ? pr.profit : null;
+                          } else {
+                            const cell = row.rounds?.[r.id];
+                            p = cell?.profit;
+                          }
                           return (
                             <td
-                              key={r.id}
+                              key={r.id != null ? r.id : `rn-${r.round_number}`}
                               className={`px-4 py-3 tabular-nums ${profitClass(p)}`}
                             >
                               {p != null ? formatMoney(p) : '—'}

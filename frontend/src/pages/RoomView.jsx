@@ -2,18 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, getUser } from '../api';
 
-function formatDeadline(iso) {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    });
-  } catch {
-    return iso;
-  }
-}
-
 export default function RoomView() {
   const { roomId } = useParams();
   const user = getUser();
@@ -21,6 +9,7 @@ export default function RoomView() {
 
   const [room, setRoom] = useState(null);
   const [rounds, setRounds] = useState([]);
+  const [seasons, setSeasons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copyDone, setCopyDone] = useState(false);
@@ -29,22 +18,32 @@ export default function RoomView() {
   const [deletingId, setDeletingId] = useState(null);
   const [showEndClassConfirm, setShowEndClassConfirm] = useState(false);
   const [endingClass, setEndingClass] = useState(false);
+  const [soloTemplates, setSoloTemplates] = useState([]);
+  const [templateName, setTemplateName] = useState('Class Season Sprint');
+  const [templateMode, setTemplateMode] = useState('random_mix');
+  const [templateError, setTemplateError] = useState('');
 
   const load = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
-      const [roomsList, roundsList] = await Promise.all([
+      const [roomsList, roundsList, seasonsList, templatesList] = await Promise.all([
         api.getRooms(),
         api.getRoomRounds(roomId),
+        api.listRoomSeasons(roomId).catch(() => []),
+        api.listRoomSoloTemplates(roomId).catch(() => []),
       ]);
       const found = roomsList.find((r) => r.id === roomId);
       setRoom(found || null);
       setRounds(Array.isArray(roundsList) ? roundsList : []);
+      setSeasons(Array.isArray(seasonsList) ? seasonsList : []);
+      setSoloTemplates(Array.isArray(templatesList) ? templatesList : []);
     } catch (e) {
       setError(e.message || 'Failed to load room');
       setRoom(null);
       setRounds([]);
+      setSeasons([]);
+      setSoloTemplates([]);
     } finally {
       setLoading(false);
     }
@@ -112,6 +111,48 @@ export default function RoomView() {
       setError(e.message || 'Could not delete round');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleCreateTemplate = async () => {
+    setTemplateError('');
+    try {
+      await api.createRoomSoloTemplate(roomId, {
+        name: templateName,
+        season_mode: templateMode,
+        total_rounds: 5,
+        contract_updates_allowed: 1,
+        round_duration_days: 30,
+        historical_leadin_days: 60,
+        scenario_preset: 'steady',
+        scenario_config: {},
+        mix_config: templateMode === 'random_mix' ? {} : { round_presets: ['steady', 'steady', 'steady', 'steady', 'steady'] },
+        costs: {
+          holding_per_unit: 1,
+          stockout_penalty: 10,
+          ordering_fixed: 20,
+          per_unit_cost: 5,
+          selling_price: 15,
+          insurance_premium: 8,
+          insurance_coverage_pct: 0.8,
+        },
+        starting_inventory: 100,
+        is_published: true,
+        scenario_seed: 42,
+      });
+      await load();
+    } catch (e) {
+      setTemplateError(e.message || 'Could not create template');
+    }
+  };
+
+  const handleInstantiateTemplate = async (templateId) => {
+    setTemplateError('');
+    try {
+      const season = await api.instantiateRoomSoloTemplate(roomId, templateId);
+      window.location.href = `/room/${roomId}/season/${season.id}`;
+    } catch (e) {
+      setTemplateError(e.message || 'Could not start Season Sprint');
     }
   };
 
@@ -216,20 +257,28 @@ export default function RoomView() {
         )}
 
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <Link
-            to={`/leaderboard/season/${roomId}`}
-            className="rounded-lg border border-slate-600 bg-slate-800 px-4 py-2 text-sm text-amber-500 transition hover:border-amber-500/50 hover:bg-slate-700"
-          >
-            Season leaderboard
-          </Link>
+          {isProfessor && !roomComplete && (
+            <Link
+              to={`/room/${roomId}/create-season`}
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400"
+            >
+              Create Season
+            </Link>
+          )}
           {isProfessor && !roomComplete && (
             <Link
               to={`/room/${roomId}/create-round`}
-              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400"
+              className="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-500 transition hover:bg-amber-500/10"
             >
               Create Round
             </Link>
           )}
+          <Link
+            to={`/room/${roomId}/season-sprint/new`}
+            className="rounded-lg border border-emerald-500/40 px-4 py-2 text-sm text-emerald-400 transition hover:bg-emerald-500/10"
+          >
+            Create {room.name} Solo Season
+          </Link>
           {isProfessor && !roomComplete && (
             <button
               type="button"
@@ -244,14 +293,124 @@ export default function RoomView() {
           )}
         </div>
 
+        {seasons.length > 0 && (
+          <div className="mb-8">
+            <h2 className="mb-4 text-lg font-medium text-slate-100">Seasons</h2>
+            <ul className="space-y-3">
+              {seasons.map((s) => {
+                const scored = s.rounds.filter((r) => r.status === 'scored').length;
+                const active = s.rounds.find((r) => r.status === 'active');
+                const isTemplateRun = Boolean(s.source_template_id);
+                const listTitle =
+                  isTemplateRun && s.template_name && s.sprint_attempt != null
+                    ? `${s.template_name} · Attempt ${s.sprint_attempt}`
+                    : s.name;
+                const standingsTo = isTemplateRun
+                  ? `/leaderboard/room/${roomId}/template/${s.source_template_id}/cohort`
+                  : `/leaderboard/season/${s.id}`;
+                const badgeColor =
+                  s.status === 'active'
+                    ? 'text-amber-400'
+                    : s.status === 'completed'
+                      ? 'text-emerald-400'
+                      : 'text-slate-400';
+                return (
+                  <li
+                    key={s.id}
+                    className="rounded-xl border border-slate-700 bg-slate-800 p-4 shadow-md"
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="font-semibold text-slate-100">{listTitle}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Preset: <span className="text-slate-300">{s.scenario_preset}</span> ·{' '}
+                          {s.total_rounds} rounds · {s.contract_updates_allowed} contract updates
+                        </p>
+                        <p className="mt-0.5 text-xs">
+                          Status: <span className={badgeColor}>{s.status}</span> · {scored}/
+                          {s.total_rounds} scored
+                          {active && (
+                            <>
+                              {' '}
+                              · Round <span className="text-amber-400">{active.round_number}</span>{' '}
+                              active
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          to={`/room/${roomId}/season/${s.id}`}
+                          className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-500 hover:bg-amber-500/10"
+                        >
+                          Open season
+                        </Link>
+                        <Link
+                          to={standingsTo}
+                          className="rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-200 transition hover:border-amber-500/40 hover:text-amber-400"
+                        >
+                          Season standings
+                        </Link>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        <div className="mb-8 rounded-xl border border-slate-700 bg-slate-800 p-4">
+          <h2 className="text-lg font-medium text-slate-100">Season Sprint templates</h2>
+          <p className="text-xs text-slate-500">Professor can publish shared templates. Students run them asynchronously on their own copies.</p>
+          {isProfessor && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm" />
+              <select value={templateMode} onChange={(e) => setTemplateMode(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm">
+                <option value="random_mix">Random mix</option>
+                <option value="custom_mix">Custom mix</option>
+              </select>
+              <button type="button" onClick={handleCreateTemplate} className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900">
+                Publish template
+              </button>
+            </div>
+          )}
+          {templateError && <p className="mt-2 text-sm text-red-400">{templateError}</p>}
+          <div className="mt-3 space-y-2">
+            {soloTemplates.length === 0 && <p className="text-sm text-slate-500">No templates yet.</p>}
+            {soloTemplates.map((t) => (
+              <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-700 p-2">
+                <p className="text-sm text-slate-200">{t.name} · {t.total_rounds} rounds · {t.season_mode}</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    to={`/leaderboard/room/${roomId}/template/${t.id}/cohort`}
+                    className="rounded border border-slate-500/50 px-3 py-1 text-sm text-slate-300 transition hover:border-amber-500/40 hover:text-amber-400"
+                  >
+                    Cohort standings
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => handleInstantiateTemplate(t.id)}
+                    className="rounded border border-amber-500/40 px-3 py-1 text-sm text-amber-400 hover:bg-amber-500/10"
+                  >
+                    Start my run
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <h2 className="mb-4 text-lg font-medium text-slate-100">Rounds</h2>
-        {rounds.length === 0 ? (
+        {rounds.filter((r) => !r.season_id).length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 p-8 text-center text-slate-400">
-            No rounds yet.
+            {seasons.length > 0
+              ? 'No ad-hoc rounds. Open a season above to see its rounds.'
+              : 'No rounds yet.'}
           </p>
         ) : (
           <ul className="space-y-4">
-            {rounds.map((r) => {
+            {rounds.filter((r) => !r.season_id).map((r) => {
               const statusColor =
                 r.status === 'draft'
                   ? 'text-slate-400'
@@ -279,9 +438,6 @@ export default function RoomView() {
                       </p>
                       <p className="mt-1 text-sm capitalize text-slate-400">
                         Status: <span className={statusColor}>{r.status}</span>
-                      </p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Deadline: {formatDeadline(r.deadline)}
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">

@@ -151,12 +151,241 @@ print(f"Highlights:")
 for h in my_res["highlights"]:
     print(f"  - {h}")
 
-# --- 11. Season leaderboard ---
+# --- 11. Season leaderboard (cumulative for one season, not whole room) ---
 print("\n" + "="*60 + "\n STEP 11: Season Leaderboard\n" + "="*60)
 
-season = requests.get(f"{BASE}/leaderboard/season/{room['id']}",
-    headers={"Authorization": f"Bearer {s1_token}"}).json()
-p("Season standings", season["standings"])
+sea = requests.post(
+    f"{BASE}/seasons",
+    json={
+        "room_id": room["id"],
+        "name": "API season standings test",
+        "total_rounds": 1,
+        "contract_updates_allowed": 0,
+        "round_duration_days": 30,
+        "historical_leadin_days": 60,
+        "scenario_preset": "steady",
+        "scenario_config": {},
+        "season_mode": "single",
+        "mix_config": {},
+        "costs": {
+            "holding_per_unit": 1.0,
+            "stockout_penalty": 10.0,
+            "ordering_fixed": 20.0,
+            "per_unit_cost": 5.0,
+            "selling_price": 15.0,
+            "insurance_premium": 8.0,
+            "insurance_coverage_pct": 0.80,
+        },
+        "starting_inventory": 100,
+        "season_scope": "room",
+    },
+    headers={"Authorization": f"Bearer {prof_token}"},
+).json()
+p("Season for cumulative LB", sea)
+season_id = sea["id"]
+sr = sea["rounds"][0]["id"]
+
+requests.post(
+    f"{BASE}/seasons/{season_id}/activate",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).raise_for_status()
+
+requests.put(
+    f"{BASE}/policies",
+    json={
+        "round_id": sr,
+        "policy_type": "order_up_to",
+        "config": {"target_level": 200, "insurance_mode": "never"},
+    },
+    headers={"Authorization": f"Bearer {s1_token}"},
+).raise_for_status()
+requests.put(
+    f"{BASE}/policies",
+    json={
+        "round_id": sr,
+        "policy_type": "service_level",
+        "config": {
+            "target_service_level": 0.95,
+            "lookback_days": 14,
+            "insurance_mode": "always",
+        },
+    },
+    headers={"Authorization": f"Bearer {s2_token}"},
+).raise_for_status()
+
+requests.post(
+    f"{BASE}/seasons/{season_id}/advance",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).raise_for_status()
+
+season = requests.get(
+    f"{BASE}/leaderboard/season/{season_id}",
+    headers={"Authorization": f"Bearer {s1_token}"},
+).json()
+p("Season standings (student view: peers anonymized)", season["standings"])
+
+for st in season["standings"]:
+    if st.get("is_me"):
+        assert st.get("user_id"), "Student should see own user_id on season standings"
+    else:
+        assert st.get("display_name") == "Other player"
+        assert "user_id" not in st
+
+season_prof = requests.get(
+    f"{BASE}/leaderboard/season/{season_id}",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).json()
+for st in season_prof["standings"]:
+    assert st.get("user_id"), "Professor should see all user_ids on season standings"
+    assert st.get("display_name") != "Other player"
+
+# --- 12. Template cohort (two "Start my run" copies, one cohort table) ---
+print("\n" + "="*60 + "\n STEP 12: Template cohort standings\n" + "="*60)
+
+COSTS = {
+    "holding_per_unit": 1.0,
+    "stockout_penalty": 10.0,
+    "ordering_fixed": 20.0,
+    "per_unit_cost": 5.0,
+    "selling_price": 15.0,
+    "insurance_premium": 8.0,
+    "insurance_coverage_pct": 0.80,
+}
+
+tpl = requests.post(
+    f"{BASE}/seasons/room/{room['id']}/solo-templates",
+    json={
+        "name": "Cohort test template",
+        "season_mode": "single",
+        "total_rounds": 1,
+        "contract_updates_allowed": 0,
+        "round_duration_days": 30,
+        "historical_leadin_days": 60,
+        "scenario_preset": "steady",
+        "scenario_config": {},
+        "mix_config": {},
+        "costs": COSTS,
+        "starting_inventory": 100,
+        "is_published": True,
+        "scenario_seed": 99,
+    },
+    headers={"Authorization": f"Bearer {prof_token}"},
+).json()
+p("Published template for cohort", tpl)
+template_id = tpl["id"]
+assert template_id
+
+sea1 = requests.post(
+    f"{BASE}/seasons/room/{room['id']}/solo-templates/{template_id}/instantiate",
+    headers={"Authorization": f"Bearer {s1_token}"},
+).json()
+sea2 = requests.post(
+    f"{BASE}/seasons/room/{room['id']}/solo-templates/{template_id}/instantiate",
+    headers={"Authorization": f"Bearer {s2_token}"},
+).json()
+tr1 = sea1["rounds"][0]["id"]
+tr2 = sea2["rounds"][0]["id"]
+
+requests.put(
+    f"{BASE}/policies",
+    json={
+        "round_id": tr1,
+        "policy_type": "order_up_to",
+        "config": {"target_level": 200, "insurance_mode": "never"},
+    },
+    headers={"Authorization": f"Bearer {s1_token}"},
+).raise_for_status()
+requests.put(
+    f"{BASE}/policies",
+    json={
+        "round_id": tr2,
+        "policy_type": "service_level",
+        "config": {
+            "target_service_level": 0.95,
+            "lookback_days": 14,
+            "insurance_mode": "always",
+        },
+    },
+    headers={"Authorization": f"Bearer {s2_token}"},
+).raise_for_status()
+
+requests.post(
+    f"{BASE}/seasons/{sea1['id']}/advance",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).raise_for_status()
+requests.post(
+    f"{BASE}/seasons/{sea2['id']}/advance",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).raise_for_status()
+
+coh = requests.get(
+    f"{BASE}/leaderboard/room/{room['id']}/template/{template_id}/cohort",
+    headers={"Authorization": f"Bearer {s1_token}"},
+).json()
+p("Cohort (student 1 view)", coh["standings"])
+assert coh.get("cohort") is True
+assert len(coh["standings"]) == 2
+for st in coh["standings"]:
+    if st.get("is_me"):
+        assert st.get("user_id")
+    else:
+        assert st.get("display_name") == "Other player"
+        assert "user_id" not in st
+for st in coh["standings"]:
+    assert "per_round" in st and st["per_round"]
+
+coh_p = requests.get(
+    f"{BASE}/leaderboard/room/{room['id']}/template/{template_id}/cohort",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).json()
+for st in coh_p["standings"]:
+    assert st.get("user_id")
+    assert st.get("display_name") != "Other player"
+
+# --- 13. List room seasons: only your template runs; attempt 1/2 for repeats ---
+print("\n" + "="*60 + "\n STEP 13: Room seasons list (per-user sprints)\n" + "="*60)
+
+list_s1 = requests.get(
+    f"{BASE}/seasons/room/{room['id']}",
+    headers={"Authorization": f"Bearer {s1_token}"},
+).json()
+p("Student 1 room seasons (fragment)", list_s1[:3] if len(list_s1) > 3 else list_s1)
+sprint_for_s1 = [x for x in list_s1 if x.get("source_template_id") == template_id]
+assert len(sprint_for_s1) == 1, f"expected 1 template season for s1, got {len(sprint_for_s1)}"
+assert sprint_for_s1[0]["id"] == sea1["id"]
+assert sprint_for_s1[0].get("template_name") == "Cohort test template"
+assert sprint_for_s1[0].get("sprint_attempt") == 1
+for x in list_s1:
+    if not x.get("source_template_id"):
+        assert x.get("sprint_attempt") is None and x.get("template_name") is None
+
+list_s2 = requests.get(
+    f"{BASE}/seasons/room/{room['id']}",
+    headers={"Authorization": f"Bearer {s2_token}"},
+).json()
+sprint_for_s2 = [x for x in list_s2 if x.get("source_template_id") == template_id]
+assert len(sprint_for_s2) == 1
+assert sprint_for_s2[0]["id"] == sea2["id"]
+assert sprint_for_s2[0].get("sprint_attempt") == 1
+# Student 1 must not see student 2's season in the list
+assert sea2["id"] not in {x["id"] for x in list_s1}
+assert sea1["id"] not in {x["id"] for x in list_s2}
+
+sea1_attempt2 = requests.post(
+    f"{BASE}/seasons/room/{room['id']}/solo-templates/{template_id}/instantiate",
+    headers={"Authorization": f"Bearer {s1_token}"},
+).json()
+list_s1_two = requests.get(
+    f"{BASE}/seasons/room/{room['id']}",
+    headers={"Authorization": f"Bearer {s1_token}"},
+).json()
+sprints_s1_both = [x for x in list_s1_two if x.get("source_template_id") == template_id]
+assert len(sprints_s1_both) == 2
+by_att = {x["sprint_attempt"]: x["id"] for x in sprints_s1_both}
+assert by_att[1] == sea1["id"]
+assert by_att[2] == sea1_attempt2["id"]
+for x in sprints_s1_both:
+    assert x.get("template_name") == "Cohort test template"
 
 print("\n" + "="*60)
 print(" ALL TESTS PASSED - GAME LOOP WORKS!")
