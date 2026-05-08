@@ -125,6 +125,12 @@ npm run dev
 
 Vite’s dev server defaults to **`http://localhost:5173`**; API paths under `/auth`, `/rooms`, `/rounds`, `/policies`, `/policy-presets`, `/results`, `/leaderboard`, `/seasons`, and `/lessons` are **proxied** to `http://localhost:8000` (see `frontend/vite.config.js`).
 
+GA4 is wired in the frontend with consent gating:
+
+- `VITE_GA_MEASUREMENT_ID` enables analytics wiring for production builds.
+- Analytics only initializes in production (`import.meta.env.PROD`).
+- Users must explicitly accept the consent banner before pageviews/events are sent.
+
 ### Run the simulation standalone
 
 Test the simulation engine without any web infrastructure:
@@ -272,8 +278,20 @@ decision-arena/
 **Frontend** — [Vercel](https://vercel.com):
 
 - Connect your repo, set root directory to `decision-arena/frontend`
-- Set env var `VITE_API_URL` to your Railway backend URL
+- Set env vars:
+  - `VITE_API_URL` to your Railway backend URL
+  - `VITE_GA_MEASUREMENT_ID=G-GFBBZSFESV`
 - Framework preset: Vite
+
+### Analytics verification (GA4)
+
+1. Deploy frontend with `VITE_GA_MEASUREMENT_ID` set.
+2. Open the deployed site in a fresh/incognito browser profile.
+3. Accept the analytics consent banner.
+4. Navigate across several routes (`/`, `/login`, `/dashboard`, etc.).
+5. In GA4, confirm activity in **Realtime** or **DebugView**:
+   - `page_view` events appear on route changes.
+   - Custom events appear for key actions (`login_success`, `room_created`, `room_joined`, `policy_submitted`).
 
 ## Roadmap and future work
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getUser } from '../api';
+import { trackEvent } from '../lib/analytics';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -51,6 +52,7 @@ export default function Dashboard() {
     setCreating(true);
     try {
       const room = await api.createRoom(roomName.trim());
+      trackEvent('room_created', { user_role: user?.role ?? 'unknown' });
       setLastCreated({ name: room.name });
       setRoomName('');
       setShowCreateForm(false);
@@ -68,6 +70,7 @@ export default function Dashboard() {
     setJoining(true);
     try {
       const res = await api.joinRoom(joinRoomId.trim(), joinCode.trim());
+      trackEvent('room_joined', { user_role: user?.role ?? 'unknown' });
       setJoinRoomId('');
       setJoinCode('');
       await loadRooms();

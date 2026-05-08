@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { api, getUser } from '../api';
 import { UITooltip } from '../components/UITooltip';
+import { trackEvent } from '../lib/analytics';
 
 const TEMPLATES = [
   {
@@ -409,6 +410,10 @@ export default function PolicyEditor() {
         round_id: roundId,
         policy_type: policyType,
         config,
+      });
+      trackEvent('policy_submitted', {
+        policy_type: policyType,
+        is_season_round: isSeasonRound,
       });
       setSubmitMsg(res?.message || 'Policy saved.');
       setHasSubmittedPolicy(true);
