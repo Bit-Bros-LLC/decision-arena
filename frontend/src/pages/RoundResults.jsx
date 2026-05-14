@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   BarChart,
@@ -15,6 +15,7 @@ import {
   Legend,
 } from 'recharts';
 import { api, getUser } from '../api';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 function formatMoney(n) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -45,6 +46,44 @@ export default function RoundResults() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [undoBusy, setUndoBusy] = useState(false);
+  const [roomCrumbName, setRoomCrumbName] = useState(null);
+
+  const roomIdForCrumb = season?.room_id || round?.room_id;
+
+  useEffect(() => {
+    if (!roomIdForCrumb) {
+      setRoomCrumbName(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getRooms()
+      .then((list) => {
+        const found = list.find((r) => r.id === roomIdForCrumb);
+        if (!cancelled) setRoomCrumbName(found?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomCrumbName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomIdForCrumb]);
+
+  const breadcrumbResultsConfig = useMemo(() => {
+    if (!round) return { labels: {}, afterDashboard: [] };
+    const rn = round.round_number;
+    const roundPolicy = typeof rn === 'number' ? `Round ${rn} · Policy` : 'Policy';
+    return {
+      labels: { roundPolicy },
+      afterDashboard:
+        roomIdForCrumb && roomCrumbName
+          ? [{ label: roomCrumbName, to: `/room/${roomIdForCrumb}` }]
+          : [],
+    };
+  }, [round, roomIdForCrumb, roomCrumbName]);
+
+  useBreadcrumbLabels(breadcrumbResultsConfig);
 
   useEffect(() => {
     let cancelled = false;

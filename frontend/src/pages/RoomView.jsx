@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, getUser } from '../api';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 export default function RoomView() {
   const { roomId } = useParams();
@@ -22,6 +23,8 @@ export default function RoomView() {
   const [templateName, setTemplateName] = useState('Class Season Sprint');
   const [templateMode, setTemplateMode] = useState('random_mix');
   const [templateError, setTemplateError] = useState('');
+
+  useBreadcrumbLabels({ labels: room?.name ? { room: room.name } : {} });
 
   const load = useCallback(async () => {
     setError(null);
@@ -263,14 +266,6 @@ export default function RoomView() {
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400"
             >
               Create Season
-            </Link>
-          )}
-          {isProfessor && !roomComplete && (
-            <Link
-              to={`/room/${roomId}/create-round`}
-              className="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-500 transition hover:bg-amber-500/10"
-            >
-              Create Round
             </Link>
           )}
           <Link

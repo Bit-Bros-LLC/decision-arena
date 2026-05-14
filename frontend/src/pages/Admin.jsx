@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { api } from '../api';
 import { CLAUDE_ROUND_DATA_PROMPT } from '../claudeRoundDataPrompt';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -217,6 +218,8 @@ export default function Admin() {
   const [previewBoundary, setPreviewBoundary] = useState(null);
   const [roomLabel, setRoomLabel] = useState(null);
   const [loadingRound, setLoadingRound] = useState(isEdit);
+
+  useBreadcrumbLabels({ labels: roomLabel ? { room: roomLabel } : {} });
 
   useEffect(() => {
     let cancelled = false;

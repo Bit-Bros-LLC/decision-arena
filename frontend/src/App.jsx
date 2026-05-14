@@ -16,6 +16,8 @@ import LearnHub from './pages/LearnHub'
 import LessonPage from './pages/LessonPage'
 import LandingPage from './pages/LandingPage'
 import NavBar from './components/NavBar'
+import BreadcrumbBar from './components/BreadcrumbBar'
+import { BreadcrumbLabelsProvider } from './context/BreadcrumbLabelsContext'
 import ConsentBanner from './components/ConsentBanner'
 import AnalyticsTracker from './components/AnalyticsTracker'
 import { getUser } from './api'
@@ -25,12 +27,13 @@ function ProtectedLayout() {
   const user = getUser();
   if (!user) return <Navigate to="/login" replace />;
   return (
-    <>
+    <BreadcrumbLabelsProvider>
       <NavBar />
+      <BreadcrumbBar />
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Outlet />
       </main>
-    </>
+    </BreadcrumbLabelsProvider>
   );
 }
 

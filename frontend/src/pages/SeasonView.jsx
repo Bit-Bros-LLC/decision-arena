@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, getUser } from '../api';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 function statusColor(status) {
   if (status === 'active') return 'text-amber-400';
@@ -20,6 +21,34 @@ export default function SeasonView() {
   const [undoBusy, setUndoBusy] = useState(false);
   const [myState, setMyState] = useState(null);
   const [roundProfitById, setRoundProfitById] = useState({});
+  const [roomDisplayName, setRoomDisplayName] = useState(null);
+
+  useEffect(() => {
+    if (!roomId) {
+      setRoomDisplayName(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getRooms()
+      .then((list) => {
+        const found = list.find((r) => r.id === roomId);
+        if (!cancelled) setRoomDisplayName(found?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomDisplayName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
+
+  useBreadcrumbLabels({
+    labels: {
+      ...(roomId && roomDisplayName ? { room: roomDisplayName } : {}),
+      ...(season?.name ? { season: season.name } : {}),
+    },
+  });
 
   const load = useCallback(async () => {
     setError(null);

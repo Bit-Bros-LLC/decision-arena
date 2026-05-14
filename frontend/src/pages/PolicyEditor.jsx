@@ -16,6 +16,7 @@ import {
 import { api, getUser } from '../api';
 import { UITooltip } from '../components/UITooltip';
 import { trackEvent } from '../lib/analytics';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 const TEMPLATES = [
   {
@@ -188,6 +189,43 @@ export default function PolicyEditor() {
   const [unlockingPolicy, setUnlockingPolicy] = useState(false);
   const [unlockMsg, setUnlockMsg] = useState('');
   const [unlockError, setUnlockError] = useState('');
+
+  const [roomCrumbName, setRoomCrumbName] = useState(null);
+
+  useEffect(() => {
+    if (!round?.room_id) {
+      setRoomCrumbName(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getRooms()
+      .then((list) => {
+        const found = list.find((r) => r.id === round.room_id);
+        if (!cancelled) setRoomCrumbName(found?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomCrumbName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [round?.room_id]);
+
+  const breadcrumbPolicyConfig = useMemo(() => {
+    if (!round) return { labels: {}, afterDashboard: [] };
+    const rn = round.round_number;
+    const roundPolicy = typeof rn === 'number' ? `Round ${rn} · Policy` : 'Policy';
+    return {
+      labels: { roundPolicy },
+      afterDashboard:
+        round.room_id && roomCrumbName
+          ? [{ label: roomCrumbName, to: `/room/${round.room_id}` }]
+          : [],
+    };
+  }, [round, roomCrumbName]);
+
+  useBreadcrumbLabels(breadcrumbPolicyConfig);
 
   const refreshPresets = useCallback(async () => {
     if (!user) return;
@@ -470,7 +508,6 @@ export default function PolicyEditor() {
   }
 
   const roundActive = round.status === 'active';
-  const isProfessor = user?.role === 'professor';
   const isSeasonRound = Boolean(round.season_id);
   const isSeasonFollowUpRound = isSeasonRound && round.round_number > 1;
   const seasonRoundUnlocked = !isSeasonFollowUpRound || seasonState?.active_round_unlocked === true;

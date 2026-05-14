@@ -10,6 +10,7 @@ import {
   Cell,
 } from 'recharts';
 import { api, getUser } from '../api';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 function formatMoney(n) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -91,8 +92,55 @@ export default function Leaderboard() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [unavailableNonClassSolo, setUnavailableNonClassSolo] = useState(false);
+  const [cohortRoomName, setCohortRoomName] = useState(null);
+  const [seasonLeaderTitle, setSeasonLeaderTitle] = useState(null);
+  const [roundLeaderTitle, setRoundLeaderTitle] = useState(null);
 
   const me = getUser();
+
+  useEffect(() => {
+    if (!isCohortRoute || !roomIdParam) {
+      setCohortRoomName(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getRooms()
+      .then((list) => {
+        const found = list.find((r) => r.id === roomIdParam);
+        if (!cancelled) setCohortRoomName(found?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setCohortRoomName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCohortRoute, roomIdParam]);
+
+  const breadcrumbLeaderboard = useMemo(() => {
+    const labels = {};
+    if (isCohortRoute && cohortRoomName) labels.room = cohortRoomName;
+    if (isCohortRoute && seasonPayload?.template_name) {
+      labels.leaderboardLeaf = `${seasonPayload.template_name} · Cohort`;
+    } else if (isSeasonRoute && seasonLeaderTitle) {
+      labels.leaderboardLeaf = seasonLeaderTitle;
+    }
+    if (roundId && !isSeasonRoute && !isCohortRoute && roundLeaderTitle) {
+      labels.leaderboardRound = roundLeaderTitle;
+    }
+    return { labels, afterDashboard: [] };
+  }, [
+    isCohortRoute,
+    isSeasonRoute,
+    roundId,
+    cohortRoomName,
+    seasonPayload?.template_name,
+    seasonLeaderTitle,
+    roundLeaderTitle,
+  ]);
+
+  useBreadcrumbLabels(breadcrumbLeaderboard);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +148,8 @@ export default function Leaderboard() {
       setLoading(true);
       setError(null);
       setUnavailableNonClassSolo(false);
+      setSeasonLeaderTitle(null);
+      setRoundLeaderTitle(null);
       try {
         if (isCohortRoute && roomIdParam && templateIdParam) {
           const s = await api.getTemplateCohortLeaderboard(roomIdParam, templateIdParam);
@@ -110,6 +160,7 @@ export default function Leaderboard() {
           }
         } else if (isSeasonRoute && seasonIdParam) {
           const meta = await api.getSeason(seasonIdParam);
+          if (!cancelled) setSeasonLeaderTitle(meta?.name ?? null);
           if (meta?.season_scope === 'sandbox') {
             if (!cancelled) {
               setUnavailableNonClassSolo(true);
@@ -127,6 +178,16 @@ export default function Leaderboard() {
           }
         } else if (roundId) {
           const rnd = await api.getRound(roundId);
+          if (!cancelled) {
+            const rn = rnd?.round_number;
+            setRoundLeaderTitle(
+              rnd && typeof rn === 'number'
+                ? `Round ${rn} · Leaderboard`
+                : rnd
+                  ? 'Round · Leaderboard'
+                  : null,
+            );
+          }
           if (rnd?.season_id) {
             const meta = await api.getSeason(rnd.season_id);
             if (meta?.season_scope === 'sandbox') {

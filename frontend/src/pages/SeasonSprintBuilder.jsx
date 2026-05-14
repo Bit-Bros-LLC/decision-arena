@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -25,15 +26,38 @@ export default function SeasonSprintBuilder() {
   const [seasonMode, setSeasonMode] = useState('random_mix');
   const [totalRounds, setTotalRounds] = useState(5);
   const [contractUpdates, setContractUpdates] = useState(1);
-  const [roundDuration, setRoundDuration] = useState(30);
-  const [leadinDays, setLeadinDays] = useState(60);
+  const [roundDuration] = useState(30);
+  const [leadinDays] = useState(60);
   const [scenarioPreset, setScenarioPreset] = useState('steady');
   const [allowedPresets, setAllowedPresets] = useState([]);
   const [customRoundPresets, setCustomRoundPresets] = useState([]);
-  const [costs, setCosts] = useState(DEFAULT_COSTS);
-  const [startingInventory, setStartingInventory] = useState(100);
+  const [costs] = useState(DEFAULT_COSTS);
+  const [startingInventory] = useState(100);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [roomBreadcrumbName, setRoomBreadcrumbName] = useState(null);
+
+  useEffect(() => {
+    if (!roomId) {
+      setRoomBreadcrumbName(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getRooms()
+      .then((list) => {
+        const found = list.find((r) => r.id === roomId);
+        if (!cancelled) setRoomBreadcrumbName(found?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomBreadcrumbName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [roomId]);
+
+  useBreadcrumbLabels({ labels: roomBreadcrumbName ? { room: roomBreadcrumbName } : {} });
 
   useEffect(() => {
     (async () => {

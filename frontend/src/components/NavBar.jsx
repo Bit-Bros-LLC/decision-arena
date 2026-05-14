@@ -50,14 +50,6 @@ export default function NavBar() {
         >
           Solo-Seasons
         </button>
-        {location.pathname !== '/dashboard' && !location.pathname.startsWith('/learn') && (
-          <button
-            onClick={() => navigate(-1)}
-            className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            &larr; Back
-          </button>
-        )}
       </div>
 
       <div className="flex items-center gap-5">

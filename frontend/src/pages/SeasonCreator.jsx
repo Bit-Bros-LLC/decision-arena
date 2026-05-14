@@ -12,6 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../api';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -125,6 +126,8 @@ export default function SeasonCreator() {
   const [previewChartData, setPreviewChartData] = useState([]);
   const [previewBoundary, setPreviewBoundary] = useState(null);
   const [previewRoundBoundaries, setPreviewRoundBoundaries] = useState([]);
+
+  useBreadcrumbLabels({ labels: roomLabel ? { room: roomLabel } : {} });
 
   useEffect(() => {
     let cancelled = false;
