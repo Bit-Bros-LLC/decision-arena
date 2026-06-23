@@ -859,7 +859,7 @@ def _score_round_in_place(rnd: RoundRow, db: Session) -> int:
                 total_profit=result.total_profit,
                 service_level=result.service_level,
                 stockout_days=result.stockout_days,
-                insurance_spend=result.insurance_spend,
+                dual_source_spend=result.dual_source_spend,
                 black_swan_hits=result.black_swan_hits,
                 black_swan_total_cost=result.black_swan_total_cost,
                 daily_log=[d.to_dict() for d in result.daily_log],

@@ -14,7 +14,9 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { api, getUser } from '../api';
+import { HelpHint } from '../components/HelpHint';
 import { UITooltip } from '../components/UITooltip';
+import { COST_TOOLTIPS } from '../lib/costTooltips';
 import { trackEvent } from '../lib/analytics';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 
@@ -37,22 +39,21 @@ const TEMPLATES = [
 ];
 
 const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99, 0.99999];
-const INSURANCE_MODES = ['never', 'always', 'conditional'];
+const DUAL_SOURCE_HELP =
+  'When dual sourcing is enabled for this round, choose whether every order uses a backup supplier. Dual sourcing adds a per-unit premium (see cost parameters) but helps orders survive supplier failure events.';
 
-const INSURANCE_HELP =
-  'Each day you decide whether to buy supply-chain insurance. If insured, you pay the daily insurance premium (see cost parameters below) and black swan damage is reduced by your coverage percentage. Never: never buy insurance. Always: buy insurance every day. Conditional: buy insurance when on-hand inventory is below 30% of the average demand over the last 7 days.';
-
-const COST_TOOLTIPS = {
-  'Holding / unit':
-    'Cost charged per unit held in inventory at the end of each day.',
-  'Stockout penalty': 'Cost per unit of demand you cannot fulfill (lost sale / penalty).',
-  'Ordering (fixed)': 'Flat fee added every time you place an order, regardless of size.',
-  'Per-unit cost': 'Purchase or procurement cost for each unit you order.',
-  'Selling price': 'Revenue received for each unit of demand you fulfill.',
-  'Insurance premium': 'Cost you pay each day you choose to buy insurance.',
-  'Insurance coverage':
-    'Share of black swan damage covered by insurance when you are insured (remainder is out-of-pocket).',
-};
+function normalizePolicyConfig(policyType, raw) {
+  const base = { ...defaultConfig(policyType), ...raw };
+  if ('dual_source' in raw) {
+    base.dual_source = Boolean(raw.dual_source);
+  } else if (raw.insurance_mode === 'always') {
+    base.dual_source = true;
+  } else {
+    base.dual_source = false;
+  }
+  delete base.insurance_mode;
+  return base;
+}
 
 function formatMoney(n) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -139,18 +140,18 @@ function stdDev(arr) {
 function defaultConfig(policyType) {
   switch (policyType) {
     case 'order_up_to':
-      return { target_level: 200, insurance_mode: 'never' };
+      return { target_level: 200, dual_source: false };
     case 'service_level':
       return {
         target_service_level: 0.95,
         lookback_days: 14,
-        insurance_mode: 'never',
+        dual_source: false,
       };
     case 'reorder_point':
       return {
         reorder_point: 120,
         order_quantity: 150,
-        insurance_mode: 'never',
+        dual_source: false,
       };
     default:
       return {};
@@ -274,7 +275,7 @@ export default function PolicyEditor() {
         setHasSubmittedPolicy(Boolean(pol));
         if (pol && pol.policy_type && pol.config) {
           setPolicyType(pol.policy_type);
-          setConfig({ ...defaultConfig(pol.policy_type), ...pol.config });
+          setConfig(normalizePolicyConfig(pol.policy_type, pol.config));
         }
         setPolicyLoaded(true);
         if (r?.season_id) {
@@ -362,7 +363,7 @@ export default function PolicyEditor() {
 
   const applyPreset = useCallback((preset) => {
     setPolicyType(preset.policy_type);
-    setConfig({ ...defaultConfig(preset.policy_type), ...preset.config });
+    setConfig(normalizePolicyConfig(preset.policy_type, preset.config));
     setSelectedPresetId(preset.id);
     setBacktestResult(null);
     setBacktestError(null);
@@ -676,13 +677,19 @@ export default function PolicyEditor() {
             <CostRow label="Ordering (fixed)" v={costs.ordering_fixed} tooltip={COST_TOOLTIPS['Ordering (fixed)']} />
             <CostRow label="Per-unit cost" v={costs.per_unit_cost} tooltip={COST_TOOLTIPS['Per-unit cost']} />
             <CostRow label="Selling price" v={costs.selling_price} tooltip={COST_TOOLTIPS['Selling price']} />
-            <CostRow label="Insurance premium" v={costs.insurance_premium} tooltip={COST_TOOLTIPS['Insurance premium']} />
-            {costs.insurance_coverage_pct != null && (
-              <CostRow
-                label="Insurance coverage"
-                v={`${(Number(costs.insurance_coverage_pct) * 100).toFixed(0)}%`}
-                tooltip={COST_TOOLTIPS['Insurance coverage']}
-              />
+            {costs.dual_source_enabled && (
+              <>
+                <CostRow
+                  label="Dual-source premium / unit"
+                  v={costs.dual_source_premium_per_unit}
+                  tooltip={COST_TOOLTIPS['Dual-source premium / unit']}
+                />
+                <CostRow
+                  label="Supplier rescue %"
+                  v={`${(Number(costs.dual_source_rescue_pct ?? 1) * 100).toFixed(0)}%`}
+                  tooltip={COST_TOOLTIPS['Supplier rescue %']}
+                />
+              </>
             )}
           </ul>
         </section>
@@ -814,14 +821,6 @@ export default function PolicyEditor() {
                   onChange={(v) => updateConfig({ target_level: v })}
                   disabled={!canExperiment}
                 />
-                <SelectField
-                  label="Insurance mode"
-                  helpText={INSURANCE_HELP}
-                  value={config.insurance_mode || 'never'}
-                  options={INSURANCE_MODES}
-                  onChange={(v) => updateConfig({ insurance_mode: v })}
-                  disabled={!canExperiment}
-                />
               </>
             )}
             {policyType === 'service_level' && (
@@ -841,14 +840,6 @@ export default function PolicyEditor() {
                   step={1}
                   value={config.lookback_days ?? 14}
                   onChange={(v) => updateConfig({ lookback_days: v })}
-                  disabled={!canExperiment}
-                />
-                <SelectField
-                  label="Insurance mode"
-                  helpText={INSURANCE_HELP}
-                  value={config.insurance_mode || 'never'}
-                  options={INSURANCE_MODES}
-                  onChange={(v) => updateConfig({ insurance_mode: v })}
                   disabled={!canExperiment}
                 />
               </>
@@ -873,15 +864,15 @@ export default function PolicyEditor() {
                   onChange={(v) => updateConfig({ order_quantity: v })}
                   disabled={!canExperiment}
                 />
-                <SelectField
-                  label="Insurance mode"
-                  helpText={INSURANCE_HELP}
-                  value={config.insurance_mode || 'never'}
-                  options={INSURANCE_MODES}
-                  onChange={(v) => updateConfig({ insurance_mode: v })}
-                  disabled={!canExperiment}
-                />
               </>
+            )}
+            {costs.dual_source_enabled && (
+              <DualSourceField
+                value={Boolean(config.dual_source)}
+                onChange={(v) => updateConfig({ dual_source: v })}
+                helpText={DUAL_SOURCE_HELP}
+                disabled={!canExperiment}
+              />
             )}
           </div>
 
@@ -1126,17 +1117,38 @@ function RangeField({ label, min, max, step, value, onChange, disabled }) {
   );
 }
 
-function HelpHint({ text }) {
+function DualSourceField({ value, onChange, helpText, disabled }) {
   return (
-    <UITooltip content={text} placement="top">
-      <button
-        type="button"
-        className="ml-0.5 inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-500 text-[10px] font-semibold leading-none text-slate-400 hover:border-amber-500/60 hover:text-amber-400"
-        aria-label="How insurance works"
-      >
-        ?
-      </button>
-    </UITooltip>
+    <div>
+      <div className="flex items-center gap-1">
+        <span className="text-sm text-slate-300">Dual sourcing</span>
+        {helpText ? <HelpHint text={helpText} ariaLabel="How dual sourcing works" /> : null}
+      </div>
+      <div className="mt-2 flex gap-4">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+          <input
+            type="radio"
+            name="dual_source"
+            checked={!value}
+            disabled={disabled}
+            onChange={() => onChange(false)}
+            className="accent-amber-500"
+          />
+          Single source
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+          <input
+            type="radio"
+            name="dual_source"
+            checked={value}
+            disabled={disabled}
+            onChange={() => onChange(true)}
+            className="accent-amber-500"
+          />
+          Dual source
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -1153,7 +1165,7 @@ function SelectField({
     <div>
       <div className="flex items-center gap-1">
         <label className="text-sm text-slate-300">{label}</label>
-        {helpText ? <HelpHint text={helpText} /> : null}
+        {helpText ? <HelpHint text={helpText} ariaLabel="How this setting works" /> : null}
       </div>
       <select
         value={value}

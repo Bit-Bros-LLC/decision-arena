@@ -14,8 +14,8 @@ export const CLAUDE_ROUND_DATA_PROMPT = `You are helping a professor create **hi
 - **Length**: How many days for historical vs actual? Typical defaults in the app are about **60 historical** and **30 actual**; confirm or use their numbers.
 - **Demand**: Baseline level, min/max caps, trends (up/down), seasonality, volatility, any “regime change” mid-series.
 - **Lead time**: Range (integers), correlation with demand or independent noise, sudden shifts.
-- **Black swans**: How often (rare vs frequent), clustered vs spread out, which types (see below), severity preferences.
-- **Constraints**: e.g. maximum demand per day, avoid zeros, pedagogical goals (stress-test insurance, stockouts, etc.).
+- **Supplier failures**: How often (rare vs frequent), clustered vs spread out, optional \`duration_days\` severity.
+- **Constraints**: e.g. maximum demand per day, avoid zeros, pedagogical goals (stress-test dual sourcing, stockouts, etc.).
 - **Historical vs actual relationship** (important—ask explicitly): When the round is **scored**, student policies are simulated on **actual** data, but each policy’s **demand_history** and **lead_time_history** are **seeded with every demand and lead_time value from historical data, in order**. So the “past” the policy sees before actual days begins includes the full historical series. Ask whether they want **continuity** (actual feels like a continuation of the same world) or a **deliberate break** (new regime for the holdout period).
 
 ## JSON schema (each array element)
@@ -34,12 +34,9 @@ Both **historical** and **actual** are JSON **arrays** of objects with this shap
 - **day**: Must run **1, 2, 3, …** with **no gaps** for each array separately (actual usually restarts at day 1 for the holdout period unless the user asks otherwise—confirm).
 - **demand**, **lead_time**: Integers ≥ 0.
 - **black_swan**: \`null\` most days, or an object with:
-  - **type** (required), one of exactly:
-    - \`supplier_failure\` — optional \`duration_days\` (default 3 in the engine)
-    - \`demand_spike\` — narrative; realized demand is still the day’s \`demand\` field
-    - \`warehouse_damage\` — optional \`inventory_loss_pct\` (0–1, default 0.5)
-    - \`cost_shock\` — optional \`cost_multiplier\` (default 2.0)
-  - Extra keys on \`black_swan\` are allowed; the simulation may ignore unknown fields.
+  - **type** (required): \`supplier_failure\` only (legacy types are ignored by the engine)
+  - optional \`duration_days\` (integer, default 3) — how long in-flight orders are disrupted
+  - Extra keys are allowed but may be ignored.
 
 ## Validation you must enforce before output
 
@@ -53,11 +50,10 @@ The user can mix ideas; examples:
 
 - Gradual increase or decrease in demand over the horizon
 - Strong seasonality (e.g. weekly or sine-like pattern) with noise
-- Stable baseline with **rare** black swans
-- **Multiple** black swan events of different types
-- Clustered crises (several bad days in a row) vs isolated shocks
-- “Recovery after crisis” (demand or lead time normalizes after a shock)
-- Multiple “black swan” stress tests in the holdout (actual) period
+- Stable baseline with **rare** supplier failures
+- **Multiple** supplier failure events in the holdout period
+- Clustered supplier disruptions vs isolated shocks
+- “Recovery after crisis” (lead time normalizes after a failure)
 
 ## Output format
 

@@ -76,8 +76,10 @@ rnd = requests.post(f"{BASE}/rounds", json={
     "costs": {
         "holding_per_unit": 1.0, "stockout_penalty": 10.0,
         "ordering_fixed": 20.0, "per_unit_cost": 5.0,
-        "selling_price": 15.0, "insurance_premium": 8.0,
-        "insurance_coverage_pct": 0.80
+        "selling_price": 15.0,
+        "dual_source_enabled": True,
+        "dual_source_premium_per_unit": 2.0,
+        "dual_source_rescue_pct": 1.0,
     },
     "starting_inventory": 100,
     "deadline": "2026-04-15T23:59:00"
@@ -97,14 +99,14 @@ print("\n" + "="*60 + "\n STEP 6: Submit Policies\n" + "="*60)
 p1 = requests.put(f"{BASE}/policies", json={
     "round_id": rnd["id"],
     "policy_type": "order_up_to",
-    "config": {"target_level": 200, "insurance_mode": "never"}
+    "config": {"target_level": 200, "dual_source": False}
 }, headers={"Authorization": f"Bearer {s1_token}"}).json()
 p("Student 1 policy (Order Up To S=200)", p1)
 
 p2 = requests.put(f"{BASE}/policies", json={
     "round_id": rnd["id"],
     "policy_type": "service_level",
-    "config": {"target_service_level": 0.95, "lookback_days": 14, "insurance_mode": "always"}
+    "config": {"target_service_level": 0.95, "lookback_days": 14, "dual_source": True}
 }, headers={"Authorization": f"Bearer {s2_token}"}).json()
 p("Student 2 policy (Service Level 95%)", p2)
 
@@ -114,7 +116,7 @@ print("\n" + "="*60 + "\n STEP 7: Backtest\n" + "="*60)
 bt = requests.post(f"{BASE}/policies/backtest", json={
     "round_id": rnd["id"],
     "policy_type": "order_up_to",
-    "config": {"target_level": 200, "insurance_mode": "never"}
+    "config": {"target_level": 200, "dual_source": False}
 }, headers={"Authorization": f"Bearer {s1_token}"}).json()
 print(f"Backtest profit: ${bt['total_profit']:,.2f}")
 print(f"Service level: {bt['service_level']:.1%}")
@@ -173,8 +175,9 @@ sea = requests.post(
             "ordering_fixed": 20.0,
             "per_unit_cost": 5.0,
             "selling_price": 15.0,
-            "insurance_premium": 8.0,
-            "insurance_coverage_pct": 0.80,
+            "dual_source_enabled": True,
+            "dual_source_premium_per_unit": 2.0,
+            "dual_source_rescue_pct": 1.0,
         },
         "starting_inventory": 100,
         "season_scope": "room",
@@ -195,7 +198,7 @@ requests.put(
     json={
         "round_id": sr,
         "policy_type": "order_up_to",
-        "config": {"target_level": 200, "insurance_mode": "never"},
+        "config": {"target_level": 200, "dual_source": False},
     },
     headers={"Authorization": f"Bearer {s1_token}"},
 ).raise_for_status()
@@ -207,7 +210,7 @@ requests.put(
         "config": {
             "target_service_level": 0.95,
             "lookback_days": 14,
-            "insurance_mode": "always",
+            "dual_source": True,
         },
     },
     headers={"Authorization": f"Bearer {s2_token}"},
@@ -248,8 +251,9 @@ COSTS = {
     "ordering_fixed": 20.0,
     "per_unit_cost": 5.0,
     "selling_price": 15.0,
-    "insurance_premium": 8.0,
-    "insurance_coverage_pct": 0.80,
+    "dual_source_enabled": True,
+    "dual_source_premium_per_unit": 2.0,
+    "dual_source_rescue_pct": 1.0,
 }
 
 tpl = requests.post(
@@ -291,7 +295,7 @@ requests.put(
     json={
         "round_id": tr1,
         "policy_type": "order_up_to",
-        "config": {"target_level": 200, "insurance_mode": "never"},
+        "config": {"target_level": 200, "dual_source": False},
     },
     headers={"Authorization": f"Bearer {s1_token}"},
 ).raise_for_status()
@@ -303,7 +307,7 @@ requests.put(
         "config": {
             "target_service_level": 0.95,
             "lookback_days": 14,
-            "insurance_mode": "always",
+            "dual_source": True,
         },
     },
     headers={"Authorization": f"Bearer {s2_token}"},

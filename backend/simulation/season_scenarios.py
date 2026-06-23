@@ -22,14 +22,6 @@ from dataclasses import dataclass
 from typing import Callable
 
 
-BLACK_SWAN_TYPES = [
-    "supplier_failure",
-    "demand_spike",
-    "warehouse_damage",
-    "cost_shock",
-]
-
-
 def _clamp_demand(d: float) -> int:
     return max(0, round(d))
 
@@ -54,7 +46,7 @@ def _make_day(day: int, demand: float, lt: int, swan: dict | None) -> dict:
 def _rand_swan(rng: random.Random, chance: float) -> dict | None:
     if rng.random() > chance:
         return None
-    return {"type": rng.choice(BLACK_SWAN_TYPES), "note": "generated"}
+    return {"type": "supplier_failure", "note": "generated"}
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +191,7 @@ def _gen_black_swan_storm(rng: random.Random, total_days: int, config: dict) -> 
         if (i - last) < min_gap:
             continue
         if rng.random() < density:
-            swans[i] = {"type": rng.choice(BLACK_SWAN_TYPES), "note": "storm"}
+            swans[i] = {"type": "supplier_failure", "note": "storm"}
             last = i
 
     out = []
@@ -268,8 +260,8 @@ SEASON_PRESETS: list[SeasonPreset] = [
     ),
     SeasonPreset(
         id="black_swan_storm",
-        name="Black Swan Storm",
-        description="Normal-ish demand but disruptions scattered across the whole season (not all in one round).",
+        name="Supplier Disruption Storm",
+        description="Normal-ish demand but supplier failures scattered across the whole season. Stress-tests dual sourcing.",
         badge="Expert",
         generate=_gen_black_swan_storm,
     ),

@@ -69,8 +69,8 @@ Students manage a virtual factory's inventory. Each simulated day:
 
 - Stochastic **demand** arrives and is fulfilled from inventory
 - **Orders** placed previously arrive after a **lead time**
-- **Black swan events** can hit: supplier failures, warehouse damage, demand spikes, cost shocks
-- **Insurance** can be purchased to mitigate black swan damage (at a daily premium cost)
+- **Supplier failure** events can cancel in-flight orders (unless the student uses dual sourcing)
+- **Dual sourcing** (optional, professor-enabled) adds a per-unit premium but helps orders survive supplier failures
 
 Three policy templates are available:
 
@@ -82,9 +82,9 @@ Three policy templates are available:
 
 **Policy UX**: students can save **policy presets** (reusable parameter sets) and, where allowed, **un-submit** a policy before the deadline. Rounds may be **draft**, **active**, or **scored**; professors can **activate** or **delete** rounds as the workflow requires.
 
-**After scoring**, **results** include: headline **P&L**, service level, stockout days, insurance spend, and black swan hit counts; a **scenario review** chart (historical vs actual demand) with optional raw JSON; **daily P&L** bar chart; auto **highlights**; and a scrollable **daily log** (demand, fulfillment, orders, inventory, events).
+**After scoring**, **results** include: headline **P&L**, service level, stockout days, dual-source spend, and supplier failure hit counts; a **scenario review** chart (historical vs actual demand) with optional raw JSON; **daily P&L** bar chart; auto **highlights**; and a scrollable **daily log** (demand, fulfillment, orders, inventory, events).
 
-**Leaderboards**: switch between **Round** (one round) and **Season** (matrix of profit per round plus **season total**). The round view adds service level, stockouts, insurance, and a mini **daily P&L** sparkline per row; the season view uses **sticky** rank and name columns for wide tables.
+**Leaderboards**: switch between **Round** (one round) and **Season** (matrix of profit per round plus **season total**). The round view adds service level, stockouts, dual-source spend, and a mini **daily P&L** sparkline per row; the season view uses **sticky** rank and name columns for wide tables.
 
 ## Tech Stack
 

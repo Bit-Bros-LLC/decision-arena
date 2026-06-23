@@ -271,6 +271,7 @@ class ResultRow(Base):
     service_level = Column(Float, nullable=False)
     stockout_days = Column(Integer, nullable=False)
     insurance_spend = Column(Float, nullable=False, default=0)
+    dual_source_spend = Column(Float, nullable=False, default=0)
     black_swan_hits = Column(Integer, nullable=False, default=0)
     black_swan_total_cost = Column(Float, nullable=False, default=0)
     daily_log = Column(JsonColumn, nullable=False)
@@ -402,6 +403,26 @@ def _migrate_schema():
                 conn.execute(
                     text("UPDATE room_solo_templates SET scenario_seed = 42 WHERE scenario_seed IS NULL")
                 )
+
+    if insp.has_table("results"):
+        insp = inspect(engine)
+        result_cols = {c["name"] for c in insp.get_columns("results")}
+        if "dual_source_spend" not in result_cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE results ADD COLUMN dual_source_spend FLOAT NOT NULL DEFAULT 0"
+                    )
+                )
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE results SET dual_source_spend = insurance_spend "
+                        "WHERE dual_source_spend = 0 AND insurance_spend != 0"
+                    )
+                )
+
+    if insp.has_table("room_solo_templates"):
         return
     with engine.begin() as conn:
         if is_sqlite:

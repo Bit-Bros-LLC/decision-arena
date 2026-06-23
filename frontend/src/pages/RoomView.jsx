@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, getUser } from '../api';
+import { FieldLabel } from '../components/FieldLabel';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import { SEASON_SPRINT_COPY } from '../lib/seasonSprintCopy';
 
 export default function RoomView() {
   const { roomId } = useParams();
@@ -20,7 +22,7 @@ export default function RoomView() {
   const [showEndClassConfirm, setShowEndClassConfirm] = useState(false);
   const [endingClass, setEndingClass] = useState(false);
   const [soloTemplates, setSoloTemplates] = useState([]);
-  const [templateName, setTemplateName] = useState('Class Season Sprint');
+  const [templateName, setTemplateName] = useState('');
   const [templateMode, setTemplateMode] = useState('random_mix');
   const [templateError, setTemplateError] = useState('');
 
@@ -118,10 +120,15 @@ export default function RoomView() {
   };
 
   const handleCreateTemplate = async () => {
+    const trimmedName = templateName.trim();
+    if (!trimmedName) {
+      setTemplateError('Please enter a template name');
+      return;
+    }
     setTemplateError('');
     try {
       await api.createRoomSoloTemplate(roomId, {
-        name: templateName,
+        name: trimmedName,
         season_mode: templateMode,
         total_rounds: 5,
         contract_updates_allowed: 1,
@@ -136,8 +143,9 @@ export default function RoomView() {
           ordering_fixed: 20,
           per_unit_cost: 5,
           selling_price: 15,
-          insurance_premium: 8,
-          insurance_coverage_pct: 0.8,
+          dual_source_enabled: false,
+          dual_source_premium_per_unit: 2,
+          dual_source_rescue_pct: 1,
         },
         starting_inventory: 100,
         is_published: true,
@@ -359,15 +367,38 @@ export default function RoomView() {
           <h2 className="text-lg font-medium text-slate-100">Season Sprint templates</h2>
           <p className="text-xs text-slate-500">Professor can publish shared templates. Students run them asynchronously on their own copies.</p>
           {isProfessor && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm" />
-              <select value={templateMode} onChange={(e) => setTemplateMode(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm">
-                <option value="random_mix">Random mix</option>
-                <option value="custom_mix">Custom mix</option>
-              </select>
-              <button type="button" onClick={handleCreateTemplate} className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900">
-                Publish template
-              </button>
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-[12rem] flex-1">
+                  <FieldLabel label="Template name" help={SEASON_SPRINT_COPY.templateName} />
+                  <input
+                    type="text"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    placeholder={SEASON_SPRINT_COPY.templateNamePlaceholder}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="min-w-[10rem]">
+                  <FieldLabel label="Mode" help={SEASON_SPRINT_COPY.templateMode} />
+                  <select
+                    value={templateMode}
+                    onChange={(e) => setTemplateMode(e.target.value)}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="random_mix">Random mix</option>
+                    <option value="custom_mix">Custom mix</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateTemplate}
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-400"
+                >
+                  Publish template
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">{SEASON_SPRINT_COPY.templateHelper}</p>
             </div>
           )}
           {templateError && <p className="mt-2 text-sm text-red-400">{templateError}</p>}

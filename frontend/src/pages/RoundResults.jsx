@@ -271,9 +271,9 @@ export default function RoundResults() {
               </dd>
             </div>
             <div>
-              <dt className="text-sm text-slate-400">Insurance spend</dt>
+              <dt className="text-sm text-slate-400">Dual-source spend</dt>
               <dd className="text-2xl font-semibold tabular-nums text-slate-100">
-                {formatMoney(data.insurance_spend)}
+                {formatMoney(data.dual_source_spend)}
               </dd>
             </div>
             <div>

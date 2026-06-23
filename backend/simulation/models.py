@@ -10,8 +10,9 @@ class CostParams:
     ordering_fixed: float = 20.0
     per_unit_cost: float = 5.0
     selling_price: float = 15.0
-    insurance_premium: float = 8.0
-    insurance_coverage_pct: float = 0.80
+    dual_source_enabled: bool = False
+    dual_source_premium_per_unit: float = 2.0
+    dual_source_rescue_pct: float = 1.0
 
     @classmethod
     def from_dict(cls, d: dict) -> CostParams:
@@ -20,7 +21,7 @@ class CostParams:
 
 @dataclass
 class BlackSwanEvent:
-    event_type: str  # "supplier_failure", "demand_spike", "warehouse_damage", "cost_shock"
+    event_type: str  # "supplier_failure"
     details: dict = field(default_factory=dict)
 
     @classmethod
@@ -51,12 +52,13 @@ class DayScenario:
 class PendingOrder:
     quantity: int
     arrival_day: int
+    dual_sourced: bool = False
 
 
 @dataclass
 class Decision:
     order_quantity: int
-    buy_insurance: bool
+    use_dual_source: bool
 
 
 @dataclass
@@ -66,7 +68,6 @@ class SimState:
     inventory: int = 0
     pending_orders: list[PendingOrder] = field(default_factory=list)
     cash: float = 0.0
-    has_insurance: bool = False
     demand_history: list[int] = field(default_factory=list)
     lead_time_history: list[int] = field(default_factory=list)
 
@@ -81,7 +82,6 @@ class SimState:
             ],
             "inventory_position": self.inventory + sum(o.quantity for o in self.pending_orders),
             "cash": self.cash,
-            "has_insurance": self.has_insurance,
             "demand_history": list(self.demand_history),
             "lead_time_history": list(self.lead_time_history),
         }
@@ -100,10 +100,10 @@ class DailyRecord:
     holding_cost: float
     stockout_cost: float
     order_cost: float
-    insurance_cost: float
+    dual_source_premium: float
     black_swan_event: str | None
     black_swan_cost: float
-    was_insured: bool
+    used_dual_source: bool
     daily_profit: float
 
     def to_dict(self) -> dict:
@@ -119,10 +119,10 @@ class DailyRecord:
             "holding_cost": round(self.holding_cost, 2),
             "stockout_cost": round(self.stockout_cost, 2),
             "order_cost": round(self.order_cost, 2),
-            "insurance_cost": round(self.insurance_cost, 2),
+            "dual_source_premium": round(self.dual_source_premium, 2),
             "black_swan_event": self.black_swan_event,
             "black_swan_cost": round(self.black_swan_cost, 2),
-            "was_insured": self.was_insured,
+            "used_dual_source": self.used_dual_source,
             "daily_profit": round(self.daily_profit, 2),
         }
 
@@ -134,7 +134,7 @@ class SimulationResult:
     stockout_days: int
     total_demand: int
     total_sold: int
-    insurance_spend: float
+    dual_source_spend: float
     black_swan_hits: int
     black_swan_total_cost: float
     daily_log: list[DailyRecord] = field(default_factory=list)
@@ -148,7 +148,7 @@ class SimulationResult:
             "stockout_days": self.stockout_days,
             "total_demand": self.total_demand,
             "total_sold": self.total_sold,
-            "insurance_spend": round(self.insurance_spend, 2),
+            "dual_source_spend": round(self.dual_source_spend, 2),
             "black_swan_hits": self.black_swan_hits,
             "black_swan_total_cost": round(self.black_swan_total_cost, 2),
             "daily_log": [d.to_dict() for d in self.daily_log],

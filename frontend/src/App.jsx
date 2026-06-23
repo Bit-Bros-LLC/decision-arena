@@ -22,18 +22,21 @@ import ConsentBanner from './components/ConsentBanner'
 import AnalyticsTracker from './components/AnalyticsTracker'
 import { getUser } from './api'
 import { getAnalyticsConsent, initAnalytics, setAnalyticsConsent } from './lib/analytics'
+import { OnboardingProvider } from './context/OnboardingContext'
 
 function ProtectedLayout() {
   const user = getUser();
   if (!user) return <Navigate to="/login" replace />;
   return (
-    <BreadcrumbLabelsProvider>
-      <NavBar />
-      <BreadcrumbBar />
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <Outlet />
-      </main>
-    </BreadcrumbLabelsProvider>
+    <OnboardingProvider>
+      <BreadcrumbLabelsProvider>
+        <NavBar />
+        <BreadcrumbBar />
+        <main className="max-w-7xl mx-auto px-4 py-6">
+          <Outlet />
+        </main>
+      </BreadcrumbLabelsProvider>
+    </OnboardingProvider>
   );
 }
 

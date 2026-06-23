@@ -29,13 +29,13 @@ SAMPLE_SCENARIO = [
     {"day": 19, "demand": 105, "lead_time": 2, "black_swan": None},
     {"day": 20, "demand": 110, "lead_time": 3, "black_swan": None},
     {"day": 21, "demand": 88,  "lead_time": 2, "black_swan": None},
-    {"day": 22, "demand": 200, "lead_time": 2, "black_swan": None},  # demand spike (no black_swan flag, just high demand)
+    {"day": 22, "demand": 200, "lead_time": 2, "black_swan": None},
     {"day": 23, "demand": 180, "lead_time": 3, "black_swan": None},
     {"day": 24, "demand": 120, "lead_time": 2, "black_swan": None},
     {"day": 25, "demand": 95,  "lead_time": 2, "black_swan": None},
     {"day": 26, "demand": 100, "lead_time": 3, "black_swan": None},
     {"day": 27, "demand": 108, "lead_time": 2, "black_swan": None},
-    {"day": 28, "demand": 115, "lead_time": 2, "black_swan": {"type": "warehouse_damage", "inventory_loss_pct": 0.4}},
+    {"day": 28, "demand": 115, "lead_time": 2, "black_swan": None},
     {"day": 29, "demand": 90,  "lead_time": 3, "black_swan": None},
     {"day": 30, "demand": 102, "lead_time": 2, "black_swan": None},
 ]
@@ -46,8 +46,9 @@ COSTS = {
     "ordering_fixed": 20.0,
     "per_unit_cost": 5.0,
     "selling_price": 15.0,
-    "insurance_premium": 8.0,
-    "insurance_coverage_pct": 0.80,
+    "dual_source_enabled": True,
+    "dual_source_premium_per_unit": 2.0,
+    "dual_source_rescue_pct": 1.0,
 }
 
 # Some historical demand for policies that need demand_history to bootstrap
@@ -56,11 +57,11 @@ HISTORICAL_LEAD_TIMES = [2, 3, 2, 3, 2, 4, 2, 3, 2, 3, 2, 3, 2, 3]
 
 
 POLICIES_TO_TEST = [
-    ("order_up_to", {"target_level": 200, "insurance_mode": "never"}, "Order Up To (S=200, no insurance)"),
-    ("order_up_to", {"target_level": 250, "insurance_mode": "always"}, "Order Up To (S=250, always insured)"),
-    ("service_level", {"target_service_level": 0.95, "lookback_days": 14, "insurance_mode": "conditional"}, "Service Level (95%, conditional insurance)"),
-    ("reorder_point", {"reorder_point": 80, "order_quantity": 150, "insurance_mode": "never"}, "Reorder Point (s=80, Q=150, no insurance)"),
-    ("reorder_point", {"reorder_point": 120, "order_quantity": 200, "insurance_mode": "always"}, "Reorder Point (s=120, Q=200, always insured)"),
+    ("order_up_to", {"target_level": 200, "dual_source": False}, "Order Up To (S=200, single source)"),
+    ("order_up_to", {"target_level": 250, "dual_source": True}, "Order Up To (S=250, dual source)"),
+    ("service_level", {"target_service_level": 0.95, "lookback_days": 14, "dual_source": False}, "Service Level (95%, single source)"),
+    ("reorder_point", {"reorder_point": 80, "order_quantity": 150, "dual_source": False}, "Reorder Point (s=80, Q=150, single source)"),
+    ("reorder_point", {"reorder_point": 120, "order_quantity": 200, "dual_source": True}, "Reorder Point (s=120, Q=200, dual source)"),
 ]
 
 
@@ -83,8 +84,8 @@ def main():
     print("DECISION ARENA - Simulation Engine Test")
     print("=" * 80)
     print(f"Scenario: 30 days, starting inventory: 100")
-    print(f"Black swans: Day 14 (supplier failure), Day 28 (warehouse damage)")
-    print(f"Demand spike: Days 22-23 (200, 180)")
+    print(f"Supplier failure: Day 14")
+    print(f"High demand: Days 22-23 (200, 180)")
     print()
 
     for policy_type, config, label in POLICIES_TO_TEST:
@@ -109,7 +110,7 @@ def main():
         print(f"    Stockout Days:     {result.stockout_days:>9} / {len(result.daily_log)}")
         print(f"    Total Demand:      {result.total_demand:>9,}")
         print(f"    Total Sold:        {result.total_sold:>9,}")
-        print(f"    Insurance Spend:  ${result.insurance_spend:>10,.2f}")
+        print(f"    Dual-Source Spend:${result.dual_source_spend:>10,.2f}")
         print(f"    Black Swan Hits:   {result.black_swan_hits:>9}")
         print(f"    Black Swan Cost:  ${result.black_swan_total_cost:>10,.2f}")
 
@@ -118,40 +119,15 @@ def main():
 
         if result.highlights:
             print(f"\n  KEY MOMENTS:")
-            for h in result.highlights:
-                print(f"    • {h}")
+            for h in result.highlights[:5]:
+                print(f"    - {h}")
 
         if result.errors:
-            print(f"\n  ERRORS:")
-            for e in result.errors:
-                print(f"    ⚠ Day {e['day']}: {e['error']}")
+            print(f"\n  ERRORS: {len(result.errors)}")
+            for err in result.errors[:3]:
+                print(f"    Day {err['day']}: {err['error']}")
 
         print()
-
-    # Leaderboard summary
-    print("=" * 80)
-    print("LEADERBOARD")
-    print("=" * 80)
-    results_list = []
-    for policy_type, config, label in POLICIES_TO_TEST:
-        policy_fn = build_policy_fn(policy_type, config)
-        result = run_simulation(
-            policy_fn=policy_fn,
-            scenario_days=SAMPLE_SCENARIO,
-            costs=COSTS,
-            starting_inventory=100,
-            demand_history_seed=HISTORICAL_DEMAND,
-            lead_time_history_seed=HISTORICAL_LEAD_TIMES,
-        )
-        results_list.append((label, result))
-
-    results_list.sort(key=lambda x: x[1].total_profit, reverse=True)
-    print(f"\n  {'Rank':>4}  {'Policy':<45} {'Profit':>10} {'SvcLvl':>7} {'Stockouts':>9}")
-    print(f"  {'----':>4}  {'------':<45} {'------':>10} {'------':>7} {'---------':>9}")
-    for i, (label, res) in enumerate(results_list, 1):
-        print(f"  {i:>4}  {label:<45} ${res.total_profit:>9,.0f} {res.service_level:>6.1%} {res.stockout_days:>9}")
-
-    print()
 
 
 if __name__ == "__main__":

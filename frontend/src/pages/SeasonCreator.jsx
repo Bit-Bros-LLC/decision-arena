@@ -12,7 +12,10 @@ import {
   YAxis,
 } from 'recharts';
 import { api } from '../api';
+import { FieldLabel } from '../components/FieldLabel';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import { COST_TOOLTIPS } from '../lib/costTooltips';
+import { SEASON_CREATOR_COPY } from '../lib/seasonCreatorCopy';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -20,8 +23,9 @@ const DEFAULT_COSTS = {
   ordering_fixed: 20,
   per_unit_cost: 5,
   selling_price: 15,
-  insurance_premium: 8,
-  insurance_coverage_pct: 0.8,
+  dual_source_enabled: false,
+  dual_source_premium_per_unit: 2,
+  dual_source_rescue_pct: 1,
 };
 
 const BADGE_COLORS = {
@@ -105,7 +109,7 @@ export default function SeasonCreator() {
   const [presetsError, setPresetsError] = useState(null);
   const [roomLabel, setRoomLabel] = useState(null);
 
-  const [name, setName] = useState('Season 1');
+  const [name, setName] = useState('');
   const [totalRounds, setTotalRounds] = useState(20);
   const [contractUpdates, setContractUpdates] = useState(3);
   const [roundDuration, setRoundDuration] = useState(30);
@@ -178,6 +182,10 @@ export default function SeasonCreator() {
   const configFields = PRESET_CONFIG_FIELDS[activePresetId] || [];
 
   const updateCost = (key, raw) => {
+    if (key === 'dual_source_enabled') {
+      setCosts((c) => ({ ...c, dual_source_enabled: raw === true || raw === 'true' }));
+      return;
+    }
     const num = parseFloat(raw);
     setCosts((c) => ({ ...c, [key]: Number.isFinite(num) ? num : c[key] }));
   };
@@ -265,6 +273,11 @@ export default function SeasonCreator() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setSubmitError('Please enter a season name');
+      return;
+    }
     if (!activePresetId) {
       setSubmitError('Pick a scenario preset first.');
       return;
@@ -278,7 +291,7 @@ export default function SeasonCreator() {
     try {
       const res = await api.createSeason({
         room_id: roomId,
-        name: name || 'Untitled season',
+        name: trimmedName,
         scenario_preset: activePresetId,
         scenario_config: scenarioConfig,
         costs,
@@ -302,6 +315,10 @@ export default function SeasonCreator() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-100">Create season</h1>
         <p className="mt-1 text-sm text-slate-400">
+          Configure rules, costs, and demand scenario for your class. Students play each round before
+          you score and advance.
+        </p>
+        <p className="mt-1 text-sm text-slate-400">
           Room: <span className="text-slate-200">{roomLabel ?? '…'}</span>
         </p>
       </div>
@@ -311,22 +328,22 @@ export default function SeasonCreator() {
         className="space-y-8 rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg"
       >
         <div>
-          <label className="block text-sm font-medium text-amber-500">Season name</label>
+          <FieldLabel label="Season name" help={SEASON_CREATOR_COPY.seasonName} />
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            placeholder={SEASON_CREATOR_COPY.seasonNamePlaceholder}
             className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
           />
+          <p className="mt-1 text-xs text-slate-500">{SEASON_CREATOR_COPY.seasonNameHelper}</p>
         </div>
 
         <fieldset className="space-y-4">
           <legend className="text-lg font-medium text-amber-500">Season rules</legend>
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="block text-xs uppercase tracking-wide text-slate-400">
-                Total rounds
-              </label>
+              <FieldLabel label="Total rounds" help={SEASON_CREATOR_COPY.totalRounds} />
               <input
                 type="number"
                 min={1}
@@ -337,9 +354,10 @@ export default function SeasonCreator() {
               />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-wide text-slate-400">
-                Contract updates per student
-              </label>
+              <FieldLabel
+                label="Contract updates per student"
+                help={SEASON_CREATOR_COPY.contractUpdatesPerStudent}
+              />
               <input
                 type="number"
                 min={0}
@@ -350,9 +368,7 @@ export default function SeasonCreator() {
               />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-wide text-slate-400">
-                Round duration (days)
-              </label>
+              <FieldLabel label="Round duration (days)" help={SEASON_CREATOR_COPY.roundDuration} />
               <input
                 type="number"
                 min={1}
@@ -363,9 +379,10 @@ export default function SeasonCreator() {
               />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-wide text-slate-400">
-                Historical lead-in (days)
-              </label>
+              <FieldLabel
+                label="Historical lead-in (days)"
+                help={SEASON_CREATOR_COPY.historicalLeadin}
+              />
               <input
                 type="number"
                 min={0}
@@ -376,9 +393,7 @@ export default function SeasonCreator() {
               />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-wide text-slate-400">
-                Starting inventory
-              </label>
+              <FieldLabel label="Starting inventory" help={SEASON_CREATOR_COPY.startingInventory} />
               <input
                 type="number"
                 min={0}
@@ -388,9 +403,10 @@ export default function SeasonCreator() {
               />
             </div>
             <div>
-              <label className="block text-xs uppercase tracking-wide text-slate-400">
-                First round deadline
-              </label>
+              <FieldLabel
+                label="First round deadline"
+                help={SEASON_CREATOR_COPY.firstRoundDeadline}
+              />
               <input
                 type="datetime-local"
                 value={firstDeadline}
@@ -414,16 +430,15 @@ export default function SeasonCreator() {
               ['ordering_fixed', 'Ordering (fixed)'],
               ['per_unit_cost', 'Per-unit cost'],
               ['selling_price', 'Selling price'],
-              ['insurance_premium', 'Insurance premium'],
-              ['insurance_coverage_pct', 'Insurance coverage (0–1)'],
-            ].map(([key, label]) => (
+            ].map(([key, label, tooltipKey]) => (
               <div key={key}>
-                <label className="block text-xs uppercase tracking-wide text-slate-400">
-                  {label}
-                </label>
+                <FieldLabel
+                  label={label}
+                  help={COST_TOOLTIPS[tooltipKey || label]}
+                />
                 <input
                   type="number"
-                  step={key === 'insurance_coverage_pct' ? '0.01' : '1'}
+                  step="1"
                   value={costs[key]}
                   onChange={(e) => updateCost(key, e.target.value)}
                   className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -434,7 +449,57 @@ export default function SeasonCreator() {
         </fieldset>
 
         <fieldset className="space-y-4">
+          <legend className="text-lg font-medium text-amber-500">Dual sourcing</legend>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+            <input
+              type="checkbox"
+              checked={Boolean(costs.dual_source_enabled)}
+              onChange={(e) => updateCost('dual_source_enabled', e.target.checked)}
+              className="rounded border-slate-600 accent-amber-500"
+            />
+            <FieldLabel
+              label="Enable dual sourcing for students"
+              help={COST_TOOLTIPS['Dual sourcing enabled']}
+            />
+          </label>
+          {costs.dual_source_enabled && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <FieldLabel
+                  label="Dual-source premium / unit"
+                  help={COST_TOOLTIPS['Dual-source premium / unit']}
+                />
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  value={costs.dual_source_premium_per_unit}
+                  onChange={(e) => updateCost('dual_source_premium_per_unit', e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+              <div>
+                <FieldLabel
+                  label="Supplier rescue % (0.5–1)"
+                  help={COST_TOOLTIPS['Supplier rescue %']}
+                />
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.5"
+                  max="1"
+                  value={costs.dual_source_rescue_pct}
+                  onChange={(e) => updateCost('dual_source_rescue_pct', e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
+            </div>
+          )}
+        </fieldset>
+
+        <fieldset className="space-y-4">
           <legend className="text-lg font-medium text-amber-500">Season scenario</legend>
+          <FieldLabel label="Demand scenario" help={SEASON_CREATOR_COPY.seasonScenario} />
           <p className="text-xs text-slate-500">
             Patterns apply across the <strong>entire season</strong>. E.g. "Regime Change" plants
             1-2 shifts somewhere in {totalRounds * roundDuration} days — not in every round.
@@ -505,11 +570,15 @@ export default function SeasonCreator() {
         )}
 
         <div>
+          <FieldLabel
+            label="Preview demand chart"
+            help={SEASON_CREATOR_COPY.previewDemand}
+          />
           <button
             type="button"
             onClick={openDemandChartPreview}
             disabled={chartLoading || !activePresetId}
-            className="rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700 disabled:opacity-50"
+            className="mt-1 rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700 disabled:opacity-50"
           >
             {chartLoading ? 'Generating…' : 'Preview demand chart'}
           </button>
