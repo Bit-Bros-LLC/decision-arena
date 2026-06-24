@@ -13,7 +13,7 @@ export const SEASON_CREATOR_COPY = {
   firstRoundDeadline:
     'When round one closes. Students must submit policies before this time.',
   seasonScenario:
-    'One demand pattern spans the whole season. Shifts and disruptions are spread across all rounds, not repeated every round.',
+    'Choose single type (one pattern all rounds), random mix (varied rounds from your pool), or custom mix (you assign each round). Use Full preview on any card before you commit.',
   previewDemand:
     'See historical lead-in and full-season demand before you publish to students.',
 };

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api, getUser } from '../api';
 import { FieldLabel } from '../components/FieldLabel';
-import ScenarioPresetCard from '../components/ScenarioPresetCard';
+import SeasonModeConfigurator from '../components/SeasonModeConfigurator';
 import PresetPreviewModal from '../components/PresetPreviewModal';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 import { useOnboarding } from '../context/OnboardingContext';
@@ -17,6 +17,12 @@ import {
 } from '../lib/presetPreview';
 import { loadPresetPreview } from '../hooks/usePresetPreview';
 import { runOnboardingTour } from '../lib/runOnboardingTour';
+import {
+  buildMixConfig,
+  defaultAllowedPresets,
+  primaryScenarioPreset,
+  validateSeasonModeConfig,
+} from '../lib/seasonMixConfig';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -68,6 +74,9 @@ export default function SeasonCreator() {
 
   const [activePresetId, setActivePresetId] = useState(null);
   const [scenarioConfig, setScenarioConfig] = useState({});
+  const [seasonMode, setSeasonMode] = useState('single');
+  const [allowedPresets, setAllowedPresets] = useState([]);
+  const [customRoundPresets, setCustomRoundPresets] = useState([]);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
@@ -121,6 +130,7 @@ export default function SeasonCreator() {
         if (!activePresetId && list.length > 0) {
           setActivePresetId(list[0].id);
           setScenarioConfig(defaultConfigFor(list[0].id));
+          setAllowedPresets(defaultAllowedPresets(list));
         }
       } catch (err) {
         if (!cancelled) setPresetsError(err.message || 'Could not load presets');
@@ -132,6 +142,20 @@ export default function SeasonCreator() {
       cancelled = true;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setCustomRoundPresets((prev) => {
+      const next = [...prev];
+      const base = activePresetId || 'steady';
+      while (next.length < Number(totalRounds)) next.push(base);
+      return next.slice(0, Number(totalRounds));
+    });
+  }, [totalRounds, activePresetId]);
+
+  const mixConfig = useMemo(
+    () => buildMixConfig(seasonMode, allowedPresets, customRoundPresets),
+    [seasonMode, allowedPresets, customRoundPresets],
+  );
 
   useEffect(() => {
     tourStartedRef.current = false;
@@ -205,9 +229,21 @@ export default function SeasonCreator() {
   };
 
   const pickPreset = (preset) => {
+    if (seasonMode === 'random_mix') {
+      setAllowedPresets((prev) => {
+        const active = prev.includes(preset.id);
+        if (active && prev.length <= 1) return prev;
+        return active ? prev.filter((x) => x !== preset.id) : [...prev, preset.id];
+      });
+      return;
+    }
     setActivePresetId(preset.id);
     setScenarioConfig(defaultConfigFor(preset.id));
     setChartError(null);
+  };
+
+  const handleCustomRoundPresetChange = (idx, value) => {
+    setCustomRoundPresets((prev) => prev.map((v, i) => (i === idx ? value : v)));
   };
 
   const openCardPreview = async (preset) => {
@@ -247,10 +283,23 @@ export default function SeasonCreator() {
 
   const openDemandChartPreview = async () => {
     setChartError(null);
-    if (!activePresetId) {
-      setChartError('Pick a scenario preset first.');
+    const modeError = validateSeasonModeConfig(
+      seasonMode,
+      activePresetId,
+      allowedPresets,
+      customRoundPresets,
+      totalRounds,
+    );
+    if (modeError) {
+      setChartError(modeError);
       return;
     }
+    const basePreset = primaryScenarioPreset(
+      seasonMode,
+      activePresetId,
+      allowedPresets,
+      customRoundPresets,
+    );
     const rounds = Number(totalRounds);
     const duration = Number(roundDuration);
     const leadin = Number(leadinDays);
@@ -269,11 +318,13 @@ export default function SeasonCreator() {
     setChartLoading(true);
     try {
       const res = await api.previewSeason({
-        scenario_preset: activePresetId,
-        scenario_config: scenarioConfig,
+        scenario_preset: basePreset,
+        scenario_config: seasonMode === 'single' ? scenarioConfig : defaultConfigFor(basePreset),
         total_rounds: rounds,
         round_duration_days: duration,
         historical_leadin_days: leadin,
+        season_mode: seasonMode,
+        mix_config: mixConfig,
       });
       const transformed = transformPreviewResponse(res);
       setPreviewChartData(transformed.chartData);
@@ -295,22 +346,37 @@ export default function SeasonCreator() {
       setSubmitError('Please enter a season name');
       return;
     }
-    if (!activePresetId) {
-      setSubmitError('Pick a scenario preset first.');
+    const modeError = validateSeasonModeConfig(
+      seasonMode,
+      activePresetId,
+      allowedPresets,
+      customRoundPresets,
+      totalRounds,
+    );
+    if (modeError) {
+      setSubmitError(modeError);
       return;
     }
     if (!firstDeadline) {
       setSubmitError('Set a first-round deadline.');
       return;
     }
+    const basePreset = primaryScenarioPreset(
+      seasonMode,
+      activePresetId,
+      allowedPresets,
+      customRoundPresets,
+    );
     const deadlineIso = firstDeadline.length === 16 ? `${firstDeadline}:00` : firstDeadline;
     setSubmitting(true);
     try {
       const res = await api.createSeason({
         room_id: roomId,
         name: trimmedName,
-        scenario_preset: activePresetId,
-        scenario_config: scenarioConfig,
+        scenario_preset: basePreset,
+        scenario_config: seasonMode === 'single' ? scenarioConfig : defaultConfigFor(basePreset),
+        season_mode: seasonMode,
+        mix_config: mixConfig,
         costs,
         starting_inventory: Number(startingInventory),
         total_rounds: Number(totalRounds),
@@ -519,35 +585,25 @@ export default function SeasonCreator() {
 
         <fieldset className="space-y-4" data-tour="season-scenario">
           <legend className="text-lg font-medium text-amber-500">Season scenario</legend>
-          <FieldLabel label="Demand scenario" help={SEASON_CREATOR_COPY.seasonScenario} />
-          <p className="text-xs text-slate-500">
-            Patterns apply across the <strong>entire season</strong>. E.g. "Regime Change" plants
-            1-2 shifts somewhere in {totalRounds * roundDuration} days — not in every round.
-          </p>
-          <p className="text-xs">
-            <Link
-              to={`/scenarios?room=${roomId}`}
-              className="text-amber-500 hover:text-amber-400"
-            >
-              Browse all scenarios
-            </Link>
-          </p>
+          <SeasonModeConfigurator
+            presets={presets}
+            seasonMode={seasonMode}
+            onSeasonModeChange={setSeasonMode}
+            scenarioPreset={activePresetId}
+            allowedPresets={allowedPresets}
+            customRoundPresets={customRoundPresets}
+            onCustomRoundPresetChange={handleCustomRoundPresetChange}
+            totalRounds={totalRounds}
+            onPresetSelect={pickPreset}
+            onPreview={openCardPreview}
+            scenariosLink={`/scenarios?room=${roomId}`}
+            showModeSelector
+            scenarioHelp={SEASON_CREATOR_COPY.seasonScenario}
+          />
           {presetsError && <p className="text-sm text-red-400">{presetsError}</p>}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {presets.map((preset) => (
-              <ScenarioPresetCard
-                key={preset.id}
-                preset={preset}
-                selected={activePresetId === preset.id}
-                selectionMode="single"
-                onSelect={pickPreset}
-                onPreview={openCardPreview}
-              />
-            ))}
-          </div>
         </fieldset>
 
-        {activePreset && configFields.length > 0 && (
+        {seasonMode === 'single' && activePreset && configFields.length > 0 && (
           <fieldset className="space-y-4">
             <legend className="text-lg font-medium text-amber-500">
               {activePreset.name} · tuning
@@ -584,7 +640,7 @@ export default function SeasonCreator() {
           <button
             type="button"
             onClick={openDemandChartPreview}
-            disabled={chartLoading || !activePresetId}
+            disabled={chartLoading}
             className="mt-1 rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700 disabled:opacity-50"
           >
             {chartLoading ? 'Generating…' : 'Preview demand chart'}

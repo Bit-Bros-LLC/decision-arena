@@ -596,6 +596,17 @@ export default function PolicyEditor() {
     seasonMeta.owner_user_id === user?.user_id &&
     (seasonMeta?.season_scope === 'sandbox' || Boolean(seasonMeta?.source_template_id));
 
+  const submitNextSteps = (() => {
+    if (!hasSubmittedPolicy) return null;
+    if (canScoreSoloRound) {
+      return 'Your policy is locked for this round. When you are ready, click Score Round to run it against hidden actuals and view results.';
+    }
+    if (isSeasonRound) {
+      return 'Your policy is locked for this round. After the deadline, your instructor scores the round — then check Round results and season standings.';
+    }
+    return 'Your policy is locked for this round. After the deadline, your instructor scores the round — then view Round results and the leaderboard.';
+  })();
+
   const handleScoreSoloRound = async () => {
     if (!round?.season_id) return;
     setSubmitError(null);
@@ -996,6 +1007,12 @@ export default function PolicyEditor() {
             <p className="mt-2 text-sm text-emerald-400" role="status">
               {submitMsg}
             </p>
+          )}
+          {submitNextSteps && (
+            <div className="mt-3 rounded-lg border border-slate-600 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
+              <span className="font-medium text-slate-200">What happens next: </span>
+              {submitNextSteps}
+            </div>
           )}
         </section>
 

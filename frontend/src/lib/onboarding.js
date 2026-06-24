@@ -44,6 +44,7 @@ function defaultState() {
     videoDismissed: false,
     checklistDismissed: false,
     checklistCollapsed: false,
+    resultsDebriefDismissed: false,
   };
 }
 
@@ -136,5 +137,15 @@ export function isChecklistCollapsed(userId) {
 export function setChecklistCollapsed(userId, collapsed = true) {
   const state = readState(userId);
   state.checklistCollapsed = collapsed;
+  writeState(userId, state);
+}
+
+export function isResultsDebriefDismissed(userId) {
+  return readState(userId).resultsDebriefDismissed;
+}
+
+export function setResultsDebriefDismissed(userId, dismissed = true) {
+  const state = readState(userId);
+  state.resultsDebriefDismissed = dismissed;
   writeState(userId, state);
 }

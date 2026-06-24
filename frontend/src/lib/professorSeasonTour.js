@@ -12,9 +12,9 @@ export function buildProfessorSeasonTourSteps() {
     },
     {
       element: '[data-tour="season-scenario"]',
-      title: 'Scenario preset',
+      title: 'Demand mode & scenarios',
       description:
-        'Pick a demand pattern. Use Full preview on any card to see sample demand before you commit.',
+        'Pick single, random mix, or custom mix — then choose patterns. Use Full preview on any card to see sample demand before you commit.',
       side: 'bottom',
     },
     {

@@ -1,10 +1,11 @@
-import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getUser } from '../api';
 import {
   getFinishedTourIds,
   isChecklistCollapsed as readChecklistCollapsed,
   isChecklistDismissed as readChecklistDismissed,
   isChecklistItemDone as readChecklistItemDone,
+  isVideoDismissed,
   restartTour,
   setChecklistCollapsed,
   setChecklistDismissed,
@@ -25,6 +26,24 @@ export function OnboardingProvider({ children }) {
   const [videoSource, setVideoSource] = useState('help_menu');
   const [tourRevision, setTourRevision] = useState(0);
   const [checklistRevision, setChecklistRevision] = useState(0);
+  const firstLoginPromptedRef = useRef(false);
+
+  useEffect(() => {
+    if (!userId || firstLoginPromptedRef.current) return;
+    if (isVideoDismissed(userId)) return;
+    firstLoginPromptedRef.current = true;
+    setVideoSource('first_login');
+    setVideoOpen(true);
+    trackEvent('onboarding_video_opened', { source: 'first_login' });
+    if (!readChecklistItemDone(userId, 'watch_intro')) {
+      setChecklistItem(userId, 'watch_intro', true);
+      trackEvent('onboarding_checklist_item_done', {
+        item_id: 'watch_intro',
+        user_role: userRole,
+      });
+      setChecklistRevision((n) => n + 1);
+    }
+  }, [userId, userRole]);
 
   const finishedTourIds = useMemo(() => {
     void tourRevision;

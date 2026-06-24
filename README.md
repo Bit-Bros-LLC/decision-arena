@@ -131,6 +131,8 @@ GA4 is wired in the frontend with consent gating:
 - Analytics only initializes in production (`import.meta.env.PROD`).
 - Users must explicitly accept the consent banner before pageviews/events are sent.
 
+**Intro video (onboarding):** set `VITE_INTRO_VIDEO_URL` in `frontend/.env` to a YouTube or Vimeo watch/embed URL. The app normalizes common URL formats to an embed iframe. When unset, Help and Learn show a “video coming soon” placeholder. On first login, signed-in users see the intro modal once unless they choose “Don’t show again.” See `frontend/.env.example`.
+
 ### Run the simulation standalone
 
 Test the simulation engine without any web infrastructure:

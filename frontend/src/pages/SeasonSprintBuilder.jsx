@@ -2,11 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { FieldLabel } from '../components/FieldLabel';
-import ScenarioPresetCard from '../components/ScenarioPresetCard';
+import SeasonModeConfigurator from '../components/SeasonModeConfigurator';
 import PresetPreviewModal from '../components/PresetPreviewModal';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 import { SEASON_SPRINT_COPY } from '../lib/seasonSprintCopy';
 import { defaultConfigFor } from '../lib/presetPreview';
+import {
+  buildMixConfig,
+  defaultAllowedPresets,
+  primaryScenarioPreset,
+  validateSeasonModeConfig,
+} from '../lib/seasonMixConfig';
 import { loadPresetPreview } from '../hooks/usePresetPreview';
 
 const DEFAULT_COSTS = {
@@ -22,10 +28,6 @@ const DEFAULT_COSTS = {
 
 const INPUT_CLASS =
   'mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500';
-
-function defaultAllowed(presets) {
-  return presets.map((p) => p.id);
-}
 
 export default function SeasonSprintBuilder() {
   const navigate = useNavigate();
@@ -84,7 +86,7 @@ export default function SeasonSprintBuilder() {
       setPresets(Array.isArray(list) ? list : []);
       const first = list?.[0]?.id || 'steady';
       setScenarioPreset(first);
-      setAllowedPresets(defaultAllowed(list || []));
+      setAllowedPresets(defaultAllowedPresets(list || []));
     })().catch(() => setPresets([]));
   }, []);
 
@@ -96,15 +98,10 @@ export default function SeasonSprintBuilder() {
     });
   }, [totalRounds, scenarioPreset]);
 
-  const mixConfig = useMemo(() => {
-    if (seasonMode === 'random_mix') {
-      return { allowed_presets: allowedPresets };
-    }
-    if (seasonMode === 'custom_mix') {
-      return { round_presets: customRoundPresets };
-    }
-    return {};
-  }, [seasonMode, allowedPresets, customRoundPresets]);
+  const mixConfig = useMemo(
+    () => buildMixConfig(seasonMode, allowedPresets, customRoundPresets),
+    [seasonMode, allowedPresets, customRoundPresets],
+  );
 
   const openCardPreview = async (preset) => {
     setCardModalPreset(preset);
@@ -144,12 +141,34 @@ export default function SeasonSprintBuilder() {
     setScenarioPreset(preset.id);
   };
 
+  const handleCustomRoundPresetChange = (idx, value) => {
+    setCustomRoundPresets((prev) => prev.map((v, i) => (i === idx ? value : v)));
+  };
+
   const submit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
       setError('Please enter a season name');
       return;
     }
+    const modeError = validateSeasonModeConfig(
+      seasonMode,
+      scenarioPreset,
+      allowedPresets,
+      customRoundPresets,
+      totalRounds,
+    );
+    if (modeError) {
+      setError(modeError);
+      return;
+    }
+
+    const basePreset = primaryScenarioPreset(
+      seasonMode,
+      scenarioPreset,
+      allowedPresets,
+      customRoundPresets,
+    );
 
     setSubmitting(true);
     setError('');
@@ -158,8 +177,8 @@ export default function SeasonSprintBuilder() {
         room_id: inRoom ? roomId : null,
         season_scope: inRoom ? 'room' : 'sandbox',
         name: trimmedName,
-        scenario_preset: scenarioPreset,
-        scenario_config: defaultConfigFor(scenarioPreset),
+        scenario_preset: basePreset,
+        scenario_config: defaultConfigFor(basePreset),
         season_mode: seasonMode,
         mix_config: mixConfig,
         total_rounds: Number(totalRounds),
@@ -182,7 +201,6 @@ export default function SeasonSprintBuilder() {
     }
   };
 
-  const showPresetGrid = seasonMode === 'single' || seasonMode === 'random_mix';
   const scenariosLink = inRoom ? `/scenarios?room=${roomId}` : '/scenarios';
 
   return (
@@ -207,18 +225,6 @@ export default function SeasonSprintBuilder() {
         </div>
         <div className="grid sm:grid-cols-2 gap-3">
           <div>
-            <FieldLabel label="Mode" help={SEASON_SPRINT_COPY.mode[seasonMode]} />
-            <select
-              value={seasonMode}
-              onChange={(e) => setSeasonMode(e.target.value)}
-              className={INPUT_CLASS}
-            >
-              <option value="random_mix">Random mix</option>
-              <option value="custom_mix">Custom mix</option>
-              <option value="single">Single type</option>
-            </select>
-          </div>
-          <div>
             <FieldLabel label="Rounds" help={SEASON_SPRINT_COPY.rounds} />
             <input
               type="number"
@@ -242,87 +248,20 @@ export default function SeasonSprintBuilder() {
           </div>
         </div>
 
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <FieldLabel
-              label={
-                seasonMode === 'random_mix'
-                  ? 'Allowed demand patterns'
-                  : seasonMode === 'single'
-                    ? 'Demand pattern'
-                    : 'Demand patterns (reference)'
-              }
-              help={
-                seasonMode === 'random_mix'
-                  ? SEASON_SPRINT_COPY.allowedTypes
-                  : seasonMode === 'single'
-                    ? SEASON_SPRINT_COPY.basePreset
-                    : SEASON_SPRINT_COPY.roundByRound
-              }
-            />
-            <Link to={scenariosLink} className="text-xs text-amber-500 hover:text-amber-400">
-              Browse all scenarios
-            </Link>
-          </div>
-          {seasonMode === 'random_mix' && (
-            <p className="text-xs text-slate-500">
-              Click a card to include or exclude that pattern from the random mix.
-            </p>
-          )}
-          {showPresetGrid && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {presets.map((preset) => (
-                <ScenarioPresetCard
-                  key={preset.id}
-                  preset={preset}
-                  selected={seasonMode === 'single' && scenarioPreset === preset.id}
-                  toggled={seasonMode === 'random_mix' && allowedPresets.includes(preset.id)}
-                  selectionMode={seasonMode === 'random_mix' ? 'toggle' : 'single'}
-                  onSelect={handlePresetSelect}
-                  onPreview={openCardPreview}
-                />
-              ))}
-            </div>
-          )}
-          {seasonMode === 'custom_mix' && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              {presets.map((preset) => (
-                <ScenarioPresetCard
-                  key={preset.id}
-                  preset={preset}
-                  selectionMode="none"
-                  onPreview={openCardPreview}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {seasonMode === 'custom_mix' && (
-          <div className="space-y-2">
-            <FieldLabel label="Round-by-round patterns" help={SEASON_SPRINT_COPY.roundByRound} />
-            {customRoundPresets.map((value, idx) => (
-              <label key={idx} className="text-sm flex items-center gap-3">
-                <span className="w-20 text-slate-400">Round {idx + 1}</span>
-                <select
-                  value={value}
-                  onChange={(e) =>
-                    setCustomRoundPresets((prev) =>
-                      prev.map((v, i) => (i === idx ? e.target.value : v))
-                    )
-                  }
-                  className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                >
-                  {presets.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-        )}
+        <SeasonModeConfigurator
+          presets={presets}
+          seasonMode={seasonMode}
+          onSeasonModeChange={setSeasonMode}
+          scenarioPreset={scenarioPreset}
+          allowedPresets={allowedPresets}
+          customRoundPresets={customRoundPresets}
+          onCustomRoundPresetChange={handleCustomRoundPresetChange}
+          totalRounds={totalRounds}
+          onPresetSelect={handlePresetSelect}
+          onPreview={openCardPreview}
+          scenariosLink={scenariosLink}
+          inputClassName={INPUT_CLASS}
+        />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
         <div className="flex gap-2">

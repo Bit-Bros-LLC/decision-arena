@@ -2,6 +2,17 @@ import { lazy } from 'react';
 
 const lessons = [
   {
+    slug: 'enter-the-arena',
+    title: 'Enter the Arena',
+    description:
+      'How the Decision Factory metaphor maps to daily play — policies, uncertainty, and hidden actuals.',
+    order: 0,
+    startHere: true,
+    icon: '🏭',
+    estimatedMinutes: 3,
+    component: lazy(() => import('../pages/lessons/EnterTheArena')),
+  },
+  {
     slug: 'why-point-forecasts-fail',
     title: 'Why Point Forecasts Fail',
     description:

@@ -84,6 +84,7 @@ export default function RoomView() {
 
   useEffect(() => {
     if (!userId || !isProfessor || loading || !room) return;
+    if (room.professor_id !== user?.user_id) return;
     if (isTourDone(userId, TOUR_IDS.PROFESSOR_ROOM)) return;
     if (tourStartedRef.current) return;
 
@@ -138,6 +139,7 @@ export default function RoomView() {
     room,
     draftRound,
     activeAdhocRound,
+    user?.user_id,
   ]);
 
   const copyInvite = async () => {
