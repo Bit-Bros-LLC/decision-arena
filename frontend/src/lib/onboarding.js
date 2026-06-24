@@ -14,6 +14,23 @@ export const TOUR_LABELS = {
   [TOUR_IDS.PROFESSOR_SEASON]: 'Season setup',
 };
 
+export const CHECKLIST_ITEMS = {
+  watch_intro: { id: 'watch_intro', label: 'Watch the intro video' },
+  solo_season: { id: 'solo_season', label: 'Start a private solo season' },
+  join_room: { id: 'join_room', label: 'Join a class room (optional)' },
+  submit_policy: { id: 'submit_policy', label: 'Submit a policy' },
+  create_room: { id: 'create_room', label: 'Create a classroom' },
+  create_season: { id: 'create_season', label: 'Set up your first season' },
+};
+
+const STUDENT_CHECKLIST_ORDER = ['watch_intro', 'solo_season', 'join_room', 'submit_policy'];
+const PROFESSOR_CHECKLIST_ORDER = ['watch_intro', 'create_room', 'create_season'];
+
+export function getChecklistItemsForRole(role) {
+  const order = role === 'professor' ? PROFESSOR_CHECKLIST_ORDER : STUDENT_CHECKLIST_ORDER;
+  return order.map((id) => CHECKLIST_ITEMS[id]);
+}
+
 const STORAGE_PREFIX = 'da_onboarding_';
 
 function storageKey(userId) {
@@ -26,6 +43,7 @@ function defaultState() {
     checklist: {},
     videoDismissed: false,
     checklistDismissed: false,
+    checklistCollapsed: false,
   };
 }
 
@@ -108,5 +126,15 @@ export function isChecklistDismissed(userId) {
 export function setChecklistDismissed(userId, dismissed = true) {
   const state = readState(userId);
   state.checklistDismissed = dismissed;
+  writeState(userId, state);
+}
+
+export function isChecklistCollapsed(userId) {
+  return readState(userId).checklistCollapsed;
+}
+
+export function setChecklistCollapsed(userId, collapsed = true) {
+  const state = readState(userId);
+  state.checklistCollapsed = collapsed;
   writeState(userId, state);
 }

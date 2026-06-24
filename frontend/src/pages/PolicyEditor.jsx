@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   LineChart,
@@ -19,6 +19,10 @@ import { UITooltip } from '../components/UITooltip';
 import { COST_TOOLTIPS } from '../lib/costTooltips';
 import { trackEvent } from '../lib/analytics';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import { useOnboarding } from '../context/OnboardingContext';
+import { runOnboardingTour } from '../lib/runOnboardingTour';
+import { isTourDone, TOUR_IDS } from '../lib/onboarding';
+import { buildPolicyEditorTourSteps } from '../lib/policyEditorTour';
 
 const TEMPLATES = [
   {
@@ -162,6 +166,8 @@ export default function PolicyEditor() {
   const { roundId } = useParams();
   const navigate = useNavigate();
   const user = getUser();
+  const { markChecklistItem, userId, userRole, tourRevision } = useOnboarding();
+  const tourStartedRef = useRef(false);
 
   const [round, setRound] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -292,6 +298,66 @@ export default function PolicyEditor() {
     };
   }, [roundId, refreshSeasonState]);
 
+  useEffect(() => {
+    tourStartedRef.current = false;
+  }, [roundId, tourRevision]);
+
+  const historical = round?.historical_data || [];
+  const costs = round?.costs || {};
+
+  useEffect(() => {
+    if (!userId || !policyLoaded || !round || loadError) return;
+    if (isTourDone(userId, TOUR_IDS.POLICY_EDITOR)) return;
+    if (tourStartedRef.current) return;
+
+    const dualSourceEnabled = Boolean(costs.dual_source_enabled);
+    const steps = buildPolicyEditorTourSteps({ dualSourceEnabled });
+
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 15;
+
+    function tryStartTour() {
+      if (cancelled || tourStartedRef.current) return;
+
+      const missing = steps.some((step) => !document.querySelector(step.element));
+      if (missing) {
+        if (attempt < maxAttempts) {
+          attempt += 1;
+          setTimeout(tryStartTour, 100);
+        }
+        return;
+      }
+
+      const firstElement = document.querySelector(steps[0].element);
+      firstElement?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+
+      tourStartedRef.current = true;
+      runOnboardingTour({
+        userId,
+        userRole,
+        tourId: TOUR_IDS.POLICY_EDITOR,
+        steps,
+      });
+    }
+
+    const frameId = requestAnimationFrame(tryStartTour);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [
+    userId,
+    userRole,
+    tourRevision,
+    roundId,
+    policyLoaded,
+    round,
+    loadError,
+    costs.dual_source_enabled,
+  ]);
+
   const handleUnlockRoundPolicy = async () => {
     if (!round?.season_id) return;
     setUnlockError('');
@@ -307,9 +373,6 @@ export default function PolicyEditor() {
       setUnlockingPolicy(false);
     }
   };
-
-  const historical = round?.historical_data || [];
-  const costs = round?.costs || {};
 
   const demandStats = useMemo(() => {
     const demands = historical.map((d) => d.demand).filter((x) => typeof x === 'number');
@@ -454,6 +517,7 @@ export default function PolicyEditor() {
         policy_type: policyType,
         is_season_round: isSeasonRound,
       });
+      markChecklistItem('submit_policy');
       setSubmitMsg(res?.message || 'Policy saved.');
       setHasSubmittedPolicy(true);
     } catch (e) {
@@ -623,7 +687,7 @@ export default function PolicyEditor() {
             <Stat label="Avg lead time" value={demandStats.avgLt.toFixed(2)} />
           </div>
 
-          <div className="mt-4 h-56 w-full min-w-0">
+          <div className="mt-4 h-56 w-full min-w-0" data-tour="historical-chart">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={lineData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -784,7 +848,7 @@ export default function PolicyEditor() {
               )}
             </div>
           )}
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3" data-tour="policy-templates">
             {TEMPLATES.map((t) => (
               <label
                 key={t.id}
@@ -809,7 +873,7 @@ export default function PolicyEditor() {
             ))}
           </div>
 
-          <div className="mt-4 space-y-4 border-t border-slate-700 pt-4">
+          <div className="mt-4 space-y-4 border-t border-slate-700 pt-4" data-tour="policy-params">
             {policyType === 'order_up_to' && (
               <>
                 <RangeField
@@ -881,6 +945,7 @@ export default function PolicyEditor() {
               type="button"
               onClick={runBacktest}
               disabled={!user || backtestLoading}
+              data-tour="backtest"
               className="rounded-lg border border-amber-500/50 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-amber-500/10 disabled:opacity-40"
             >
               {backtestLoading ? 'Running…' : 'Run Backtest'}
@@ -899,6 +964,7 @@ export default function PolicyEditor() {
               type="button"
               onClick={submitPolicy}
                   disabled={!canSubmitPolicy || submitLoading}
+              data-tour="submit-policy"
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-400 disabled:opacity-40"
             >
               {submitLoading ? 'Saving…' : 'Submit Policy'}
@@ -1119,7 +1185,7 @@ function RangeField({ label, min, max, step, value, onChange, disabled }) {
 
 function DualSourceField({ value, onChange, helpText, disabled }) {
   return (
-    <div>
+    <div data-tour="dual-sourcing">
       <div className="flex items-center gap-1">
         <span className="text-sm text-slate-300">Dual sourcing</span>
         {helpText ? <HelpHint text={helpText} ariaLabel="How dual sourcing works" /> : null}

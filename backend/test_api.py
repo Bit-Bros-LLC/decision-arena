@@ -391,6 +391,24 @@ assert by_att[2] == sea1_attempt2["id"]
 for x in sprints_s1_both:
     assert x.get("template_name") == "Cohort test template"
 
+# --- Onboarding status ---
+print("\n" + "="*60 + "\n Onboarding status\n" + "="*60)
+
+onboarding_s1 = requests.get(
+    f"{BASE}/users/me/onboarding-status",
+    headers={"Authorization": f"Bearer {s1_token}"},
+).json()
+p("Student onboarding status", onboarding_s1)
+assert onboarding_s1["has_policy_submission"] is True
+assert onboarding_s1["has_class_room"] is True
+
+onboarding_prof = requests.get(
+    f"{BASE}/users/me/onboarding-status",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).json()
+p("Professor onboarding status", onboarding_prof)
+assert onboarding_prof["has_teaching_room"] is True
+
 print("\n" + "="*60)
 print(" ALL TESTS PASSED - GAME LOOP WORKS!")
 print("="*60)

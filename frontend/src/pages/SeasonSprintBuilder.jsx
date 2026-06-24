@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { FieldLabel } from '../components/FieldLabel';
-import { UITooltip } from '../components/UITooltip';
+import ScenarioPresetCard from '../components/ScenarioPresetCard';
+import PresetPreviewModal from '../components/PresetPreviewModal';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 import { SEASON_SPRINT_COPY } from '../lib/seasonSprintCopy';
+import { defaultConfigFor } from '../lib/presetPreview';
+import { loadPresetPreview } from '../hooks/usePresetPreview';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -43,6 +46,15 @@ export default function SeasonSprintBuilder() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [roomBreadcrumbName, setRoomBreadcrumbName] = useState(null);
+
+  const [cardModalPreset, setCardModalPreset] = useState(null);
+  const [cardModalLoading, setCardModalLoading] = useState(false);
+  const [cardModalError, setCardModalError] = useState(null);
+  const [cardModalChart, setCardModalChart] = useState({
+    chartData: [],
+    boundary: null,
+    roundBoundaries: [],
+  });
 
   useEffect(() => {
     if (!roomId) {
@@ -94,6 +106,44 @@ export default function SeasonSprintBuilder() {
     return {};
   }, [seasonMode, allowedPresets, customRoundPresets]);
 
+  const openCardPreview = async (preset) => {
+    setCardModalPreset(preset);
+    setCardModalError(null);
+    setCardModalLoading(true);
+    try {
+      const data = await loadPresetPreview(preset.id);
+      if (data) {
+        setCardModalChart({
+          chartData: data.chartData,
+          boundary: data.boundary,
+          roundBoundaries: data.roundBoundaries,
+        });
+      }
+    } catch (err) {
+      setCardModalError(err.message || 'Could not generate preview');
+    } finally {
+      setCardModalLoading(false);
+    }
+  };
+
+  const closeCardPreview = () => {
+    setCardModalPreset(null);
+    setCardModalError(null);
+    setCardModalChart({ chartData: [], boundary: null, roundBoundaries: [] });
+  };
+
+  const handlePresetSelect = (preset) => {
+    if (seasonMode === 'random_mix') {
+      setAllowedPresets((prev) => {
+        const active = prev.includes(preset.id);
+        if (active && prev.length <= 1) return prev;
+        return active ? prev.filter((x) => x !== preset.id) : [...prev, preset.id];
+      });
+      return;
+    }
+    setScenarioPreset(preset.id);
+  };
+
   const submit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
@@ -109,7 +159,7 @@ export default function SeasonSprintBuilder() {
         season_scope: inRoom ? 'room' : 'sandbox',
         name: trimmedName,
         scenario_preset: scenarioPreset,
-        scenario_config: {},
+        scenario_config: defaultConfigFor(scenarioPreset),
         season_mode: seasonMode,
         mix_config: mixConfig,
         total_rounds: Number(totalRounds),
@@ -131,6 +181,9 @@ export default function SeasonSprintBuilder() {
       setSubmitting(false);
     }
   };
+
+  const showPresetGrid = seasonMode === 'single' || seasonMode === 'random_mix';
+  const scenariosLink = inRoom ? `/scenarios?room=${roomId}` : '/scenarios';
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -166,20 +219,6 @@ export default function SeasonSprintBuilder() {
             </select>
           </div>
           <div>
-            <FieldLabel label="Base preset" help={SEASON_SPRINT_COPY.basePreset} />
-            <select
-              value={scenarioPreset}
-              onChange={(e) => setScenarioPreset(e.target.value)}
-              className={INPUT_CLASS}
-            >
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
             <FieldLabel label="Rounds" help={SEASON_SPRINT_COPY.rounds} />
             <input
               type="number"
@@ -203,35 +242,61 @@ export default function SeasonSprintBuilder() {
           </div>
         </div>
 
-        {seasonMode === 'random_mix' && (
-          <div>
-            <FieldLabel label="Allowed demand patterns" help={SEASON_SPRINT_COPY.allowedTypes} />
-            <div className="mt-2 flex flex-wrap gap-2">
-              {presets.map((p) => {
-                const active = allowedPresets.includes(p.id);
-                return (
-                  <UITooltip key={p.id} content={p.description} placement="top">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setAllowedPresets((prev) =>
-                          active ? prev.filter((x) => x !== p.id) : [...prev, p.id]
-                        )
-                      }
-                      className={`rounded px-3 py-1 text-sm ${
-                        active
-                          ? 'bg-amber-500 text-slate-900'
-                          : 'border border-slate-600 text-slate-300'
-                      }`}
-                    >
-                      {p.name}
-                    </button>
-                  </UITooltip>
-                );
-              })}
-            </div>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FieldLabel
+              label={
+                seasonMode === 'random_mix'
+                  ? 'Allowed demand patterns'
+                  : seasonMode === 'single'
+                    ? 'Demand pattern'
+                    : 'Demand patterns (reference)'
+              }
+              help={
+                seasonMode === 'random_mix'
+                  ? SEASON_SPRINT_COPY.allowedTypes
+                  : seasonMode === 'single'
+                    ? SEASON_SPRINT_COPY.basePreset
+                    : SEASON_SPRINT_COPY.roundByRound
+              }
+            />
+            <Link to={scenariosLink} className="text-xs text-amber-500 hover:text-amber-400">
+              Browse all scenarios
+            </Link>
           </div>
-        )}
+          {seasonMode === 'random_mix' && (
+            <p className="text-xs text-slate-500">
+              Click a card to include or exclude that pattern from the random mix.
+            </p>
+          )}
+          {showPresetGrid && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {presets.map((preset) => (
+                <ScenarioPresetCard
+                  key={preset.id}
+                  preset={preset}
+                  selected={seasonMode === 'single' && scenarioPreset === preset.id}
+                  toggled={seasonMode === 'random_mix' && allowedPresets.includes(preset.id)}
+                  selectionMode={seasonMode === 'random_mix' ? 'toggle' : 'single'}
+                  onSelect={handlePresetSelect}
+                  onPreview={openCardPreview}
+                />
+              ))}
+            </div>
+          )}
+          {seasonMode === 'custom_mix' && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {presets.map((preset) => (
+                <ScenarioPresetCard
+                  key={preset.id}
+                  preset={preset}
+                  selectionMode="none"
+                  onPreview={openCardPreview}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
         {seasonMode === 'custom_mix' && (
           <div className="space-y-2">
@@ -277,6 +342,18 @@ export default function SeasonSprintBuilder() {
           </Link>
         </div>
       </div>
+
+      <PresetPreviewModal
+        open={Boolean(cardModalPreset)}
+        onClose={closeCardPreview}
+        title={cardModalPreset ? `${cardModalPreset.name} — sample demand preview` : ''}
+        subtitle="Sample: 3 rounds × 30 days with 60-day historical lead-in (default preset tuning)."
+        chartData={cardModalChart.chartData}
+        boundary={cardModalChart.boundary}
+        roundBoundaries={cardModalChart.roundBoundaries}
+        loading={cardModalLoading}
+        error={cardModalError}
+      />
     </div>
   );
 }

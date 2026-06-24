@@ -10,6 +10,7 @@ from routes.results import router as results_router
 from routes.policy_presets import router as policy_presets_router
 from routes.lessons import router as lessons_router
 from routes.seasons import router as seasons_router
+from routes.onboarding import router as onboarding_router
 
 app = FastAPI(title="Decision Arena", version="0.1.0")
 
@@ -29,6 +30,7 @@ app.include_router(policy_presets_router)
 app.include_router(results_router)
 app.include_router(lessons_router)
 app.include_router(seasons_router)
+app.include_router(onboarding_router)
 
 
 @app.on_event("startup")

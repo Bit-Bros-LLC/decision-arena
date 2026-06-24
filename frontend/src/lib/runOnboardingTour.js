@@ -24,6 +24,22 @@ export function runOnboardingTour({ userId, userRole, tourId, steps }) {
 
   let outcome = null;
 
+  function markSkipped(driverInstance) {
+    if (!outcome) {
+      outcome = 'skipped';
+      setTourStatus(userId, tourId, 'skipped');
+      trackEvent('onboarding_tour_skipped', { tour_id: tourId, user_role: userRole });
+    }
+    driverInstance.destroy();
+  }
+
+  function markCompleted(driverInstance) {
+    outcome = 'completed';
+    setTourStatus(userId, tourId, 'completed');
+    trackEvent('onboarding_tour_completed', { tour_id: tourId, user_role: userRole });
+    driverInstance.destroy();
+  }
+
   const driverObj = driver({
     showProgress: true,
     allowClose: true,
@@ -44,26 +60,27 @@ export function runOnboardingTour({ userId, userRole, tourId, steps }) {
         align: step.align ?? 'start',
       },
     })),
+    onPopoverRender: (popover, { driver: d }) => {
+      const skipButton = document.createElement('button');
+      skipButton.type = 'button';
+      skipButton.className = 'driver-popover-prev-btn driver-popover-skip-btn';
+      skipButton.textContent = 'Skip';
+      skipButton.addEventListener('click', () => markSkipped(d));
+      popover.footerButtons.insertBefore(skipButton, popover.footerButtons.firstChild);
+    },
     onNextClick: (_element, _step, { driver: d }) => {
       if (d.hasNextStep()) {
         d.moveNext();
         return;
       }
-      outcome = 'completed';
-      setTourStatus(userId, tourId, 'completed');
-      trackEvent('onboarding_tour_completed', { tour_id: tourId, user_role: userRole });
-      d.destroy();
+      markCompleted(d);
     },
     onCloseClick: (_element, _step, { driver: d }) => {
-      if (!outcome) {
-        outcome = 'skipped';
-        setTourStatus(userId, tourId, 'skipped');
-        trackEvent('onboarding_tour_skipped', { tour_id: tourId, user_role: userRole });
-      }
-      d.destroy();
+      markSkipped(d);
     },
     onDestroyed: () => {
       if (!outcome) {
+        outcome = 'skipped';
         setTourStatus(userId, tourId, 'skipped');
         trackEvent('onboarding_tour_skipped', { tour_id: tourId, user_role: userRole });
       }

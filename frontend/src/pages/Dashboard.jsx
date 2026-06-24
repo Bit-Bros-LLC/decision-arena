@@ -2,11 +2,15 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, getUser } from '../api';
 import { trackEvent } from '../lib/analytics';
+import { useOnboarding } from '../context/OnboardingContext';
+import DashboardChecklist from '../components/DashboardChecklist';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { markChecklistItem } = useOnboarding();
   const [user, setUser] = useState(() => getUser());
   const [rooms, setRooms] = useState([]);
+  const [soloSeasons, setSoloSeasons] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [roomsError, setRoomsError] = useState('');
 
@@ -22,13 +26,28 @@ export default function Dashboard() {
   const [joinError, setJoinError] = useState('');
 
   const isProfessor = user?.role === 'professor';
+  const highlightSoloCta = !isProfessor && !loadingRooms && rooms.length === 0 && soloSeasons.length === 0;
+  const highlightCreateRoomCta = isProfessor && !loadingRooms && rooms.length === 0;
 
-  async function loadRooms() {
+  async function loadDashboardData() {
     setRoomsError('');
     setLoadingRooms(true);
     try {
-      const list = await api.getRooms();
-      setRooms(list);
+      const [list, seasons, status] = await Promise.all([
+        api.getRooms(),
+        api.listMySoloSeasons().catch(() => []),
+        api.getOnboardingStatus().catch(() => null),
+      ]);
+      setRooms(Array.isArray(list) ? list : []);
+      setSoloSeasons(Array.isArray(seasons) ? seasons : []);
+
+      if (status) {
+        if (status.has_policy_submission) markChecklistItem('submit_policy');
+        if (status.has_solo_season) markChecklistItem('solo_season');
+        if (status.has_class_room) markChecklistItem('join_room');
+        if (status.has_teaching_room) markChecklistItem('create_room');
+        if (status.has_season) markChecklistItem('create_season');
+      }
     } catch (err) {
       setRoomsError(err.message || 'Failed to load rooms');
     } finally {
@@ -43,7 +62,7 @@ export default function Dashboard() {
       return;
     }
     setUser(u);
-    loadRooms();
+    loadDashboardData();
   }, [navigate]);
 
   async function handleCreateRoom(e) {
@@ -53,10 +72,11 @@ export default function Dashboard() {
     try {
       const room = await api.createRoom(roomName.trim());
       trackEvent('room_created', { user_role: user?.role ?? 'unknown' });
+      markChecklistItem('create_room');
       setLastCreated({ name: room.name });
       setRoomName('');
       setShowCreateForm(false);
-      await loadRooms();
+      await loadDashboardData();
     } catch (err) {
       setCreateError(err.message || 'Could not create room');
     } finally {
@@ -71,15 +91,21 @@ export default function Dashboard() {
     try {
       const res = await api.joinRoom(joinRoomId.trim(), joinCode.trim());
       trackEvent('room_joined', { user_role: user?.role ?? 'unknown' });
+      markChecklistItem('join_room');
       setJoinRoomId('');
       setJoinCode('');
-      await loadRooms();
+      await loadDashboardData();
       if (res.room_id) navigate(`/room/${res.room_id}`);
     } catch (err) {
       setJoinError(err.message || 'Could not join room');
     } finally {
       setJoining(false);
     }
+  }
+
+  function goToSoloSeason() {
+    markChecklistItem('solo_season');
+    navigate('/season-sprint/new');
   }
 
   if (!user) return null;
@@ -103,17 +129,32 @@ export default function Dashboard() {
           </div>
         )}
 
+        <DashboardChecklist
+          rooms={rooms}
+          soloSeasons={soloSeasons}
+          isProfessor={isProfessor}
+        />
+
         {isProfessor && (
-          <section className="rounded-xl border border-slate-700 bg-slate-800 p-6">
+          <section id="create-room" className="rounded-xl border border-slate-700 bg-slate-800 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-medium text-slate-200">Create room</h2>
+              <div>
+                <h2 className="text-lg font-medium text-slate-200">Create room</h2>
+                {highlightCreateRoomCta && (
+                  <p className="mt-1 text-sm text-amber-400/90">
+                    Start here — create a classroom for your students.
+                  </p>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => {
                   setShowCreateForm((v) => !v);
                   setCreateError('');
                 }}
-                className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
+                className={`rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400 ${
+                  highlightCreateRoomCta ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-800' : ''
+                }`}
               >
                 {showCreateForm ? 'Cancel' : 'Create Room'}
               </button>
@@ -150,18 +191,25 @@ export default function Dashboard() {
             <div>
               <h2 className="text-lg font-medium text-slate-200">Private Solo Seasons</h2>
               <p className="text-sm text-slate-400">Create a solo season not affiliated with any class.</p>
+              {highlightSoloCta && (
+                <p className="mt-1 text-sm text-emerald-400/90">
+                  New here? Start with a private solo season to practice.
+                </p>
+              )}
             </div>
             <button
               type="button"
-              onClick={() => navigate('/season-sprint/new')}
-              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-400"
+              onClick={goToSoloSeason}
+              className={`rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-emerald-400 ${
+                highlightSoloCta ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-800' : ''
+              }`}
             >
               Create Private Solo Season
             </button>
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-700 bg-slate-800 p-6">
+        <section id="join-room" className="rounded-xl border border-slate-700 bg-slate-800 p-6">
           <h2 className="text-lg font-medium text-slate-200">Join room</h2>
           <p className="mt-1 text-sm text-slate-400">
             Enter the room ID and invite code from your instructor.
