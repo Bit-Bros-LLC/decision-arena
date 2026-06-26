@@ -10,6 +10,7 @@ import Admin from './pages/Admin'
 import SeasonCreator from './pages/SeasonCreator'
 import SeasonView from './pages/SeasonView'
 import SeasonSprintBuilder from './pages/SeasonSprintBuilder'
+import ScenarioLibrary from './pages/ScenarioLibrary'
 import SoloSeasonsPage from './pages/SoloSeasonsPage'
 import AccountSettings from './pages/AccountSettings'
 import LearnHub from './pages/LearnHub'
@@ -22,18 +23,21 @@ import ConsentBanner from './components/ConsentBanner'
 import AnalyticsTracker from './components/AnalyticsTracker'
 import { getUser } from './api'
 import { getAnalyticsConsent, initAnalytics, setAnalyticsConsent } from './lib/analytics'
+import { OnboardingProvider } from './context/OnboardingContext'
 
 function ProtectedLayout() {
   const user = getUser();
   if (!user) return <Navigate to="/login" replace />;
   return (
-    <BreadcrumbLabelsProvider>
-      <NavBar />
-      <BreadcrumbBar />
-      <main className="max-w-7xl mx-auto px-4 py-6">
-        <Outlet />
-      </main>
-    </BreadcrumbLabelsProvider>
+    <OnboardingProvider>
+      <BreadcrumbLabelsProvider>
+        <NavBar />
+        <BreadcrumbBar />
+        <main className="max-w-7xl mx-auto px-4 py-6">
+          <Outlet />
+        </main>
+      </BreadcrumbLabelsProvider>
+    </OnboardingProvider>
   );
 }
 
@@ -71,6 +75,7 @@ export default function App() {
           <Route path="/room/:roomId/season/:seasonId" element={<SeasonView />} />
           <Route path="/room/:roomId/season-sprint/new" element={<SeasonSprintBuilder />} />
           <Route path="/season-sprint/new" element={<SeasonSprintBuilder />} />
+          <Route path="/scenarios" element={<ScenarioLibrary />} />
           <Route path="/season-sprint/:seasonId" element={<SeasonView />} />
           <Route path="/solo-seasons" element={<SoloSeasonsPage />} />
           <Route path="/round/:roundId" element={<PolicyEditor />} />

@@ -52,6 +52,7 @@ export const api = {
   login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   updateProfile: (body) => request('/auth/profile', { method: 'PUT', body: JSON.stringify(body) }),
   listUsers: () => request('/auth/users'),
+  getOnboardingStatus: () => request('/users/me/onboarding-status'),
   adminResetPassword: (body) => request('/auth/admin-reset-password', { method: 'POST', body: JSON.stringify(body) }),
 
   getRooms: () => request('/rooms'),

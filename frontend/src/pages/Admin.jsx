@@ -21,14 +21,14 @@ const DEFAULT_COSTS = {
   ordering_fixed: 20,
   per_unit_cost: 5,
   selling_price: 15,
-  insurance_premium: 8,
-  insurance_coverage_pct: 0.8,
+  dual_source_enabled: false,
+  dual_source_premium_per_unit: 2,
+  dual_source_rescue_pct: 1,
 };
 
 function randomBlackSwan(chance = 0.06) {
   if (Math.random() > chance) return null;
-  const types = ['supplier_failure', 'demand_spike', 'warehouse_damage', 'cost_shock'];
-  return { type: types[Math.floor(Math.random() * types.length)], note: 'sample' };
+  return { type: 'supplier_failure', note: 'sample' };
 }
 
 function clampDemand(d) {
@@ -162,8 +162,8 @@ const SCENARIO_PRESETS = [
   },
   {
     id: 'black_swan_storm',
-    name: 'Black Swan Storm',
-    description: 'Normal-ish demand but disruptions hit ~20% of days. Forces students to value insurance and contingency.',
+    name: 'Supplier Disruption Storm',
+    description: 'Normal-ish demand but supplier failures hit ~4% of days. Stress-tests dual sourcing.',
     badge: 'Expert',
     badgeColor: 'text-purple-400 border-purple-400/30 bg-purple-400/10',
     generate() {
@@ -172,7 +172,7 @@ const SCENARIO_PRESETS = [
           day: startDay + i,
           demand: clampDemand(80 + (Math.random() - 0.5) * 40),
           lead_time: 1 + Math.floor(Math.random() * 4),
-          black_swan: randomBlackSwan(0.20),
+          black_swan: randomBlackSwan(0.04),
         }));
       return { historical: make(60, 1), actual: make(30, 1) };
     },
@@ -285,7 +285,11 @@ export default function Admin() {
   };
 
   const updateCost = (key, raw) => {
-    const num = key === 'insurance_coverage_pct' ? parseFloat(raw) : parseFloat(raw);
+    if (key === 'dual_source_enabled') {
+      setCosts((c) => ({ ...c, dual_source_enabled: raw === true || raw === 'true' }));
+      return;
+    }
+    const num = parseFloat(raw);
     setCosts((c) => ({ ...c, [key]: Number.isFinite(num) ? num : c[key] }));
   };
 
@@ -431,8 +435,6 @@ export default function Admin() {
                 ['ordering_fixed', 'Ordering (fixed)'],
                 ['per_unit_cost', 'Per-unit cost'],
                 ['selling_price', 'Selling price'],
-                ['insurance_premium', 'Insurance premium'],
-                ['insurance_coverage_pct', 'Insurance coverage (0–1)'],
               ].map(([key, label]) => (
                 <div key={key}>
                   <label className="block text-xs uppercase tracking-wide text-slate-400">
@@ -440,7 +442,7 @@ export default function Admin() {
                   </label>
                   <input
                     type="number"
-                    step={key === 'insurance_coverage_pct' ? '0.01' : '1'}
+                    step="1"
                     value={costs[key]}
                     onChange={(e) => updateCost(key, e.target.value)}
                     className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -448,6 +450,50 @@ export default function Admin() {
                 </div>
               ))}
             </div>
+          </fieldset>
+
+          <fieldset className="space-y-4">
+            <legend className="text-lg font-medium text-amber-500">Dual sourcing</legend>
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={Boolean(costs.dual_source_enabled)}
+                onChange={(e) => updateCost('dual_source_enabled', e.target.checked)}
+                className="rounded border-slate-600 accent-amber-500"
+              />
+              Enable dual sourcing for students
+            </label>
+            {costs.dual_source_enabled && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-xs uppercase tracking-wide text-slate-400">
+                    Dual-source premium / unit
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={costs.dual_source_premium_per_unit}
+                    onChange={(e) => updateCost('dual_source_premium_per_unit', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs uppercase tracking-wide text-slate-400">
+                    Supplier rescue % (0.5–1)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.05"
+                    min="0.5"
+                    max="1"
+                    value={costs.dual_source_rescue_pct}
+                    onChange={(e) => updateCost('dual_source_rescue_pct', e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+            )}
           </fieldset>
 
           <div>

@@ -7,16 +7,12 @@ import math
 from .models import Decision
 
 
-def _insurance_decision(state: dict, mode: str, threshold: float = 0.3) -> bool:
-    if mode == "always":
-        return True
-    if mode == "never":
-        return False
-    # "conditional" - buy insurance when inventory is low relative to recent demand
-    if not state["demand_history"]:
-        return False
-    avg_demand = sum(state["demand_history"][-7:]) / max(len(state["demand_history"][-7:]), 1)
-    return state["inventory"] < avg_demand * threshold
+def _dual_source_from_config(config: dict) -> bool:
+    if "dual_source" in config:
+        return bool(config["dual_source"])
+    # Legacy insurance_mode mapping
+    mode = config.get("insurance_mode", "never")
+    return mode == "always"
 
 
 # ---------------------------------------------------------------------------
@@ -28,17 +24,17 @@ def make_order_up_to(config: dict):
     Each day: order enough to bring inventory_position up to target S.
     Config keys:
         target_level (int): the S value
-        insurance_mode (str): "always" | "never" | "conditional"
+        dual_source (bool): use dual sourcing for all orders when enabled on round
     """
     target = int(config["target_level"])
-    ins_mode = config.get("insurance_mode", "never")
+    use_dual = _dual_source_from_config(config)
 
     def policy_fn(state: dict) -> Decision:
         gap = target - state["inventory_position"]
         order_qty = max(0, gap)
         return Decision(
             order_quantity=order_qty,
-            buy_insurance=_insurance_decision(state, ins_mode),
+            use_dual_source=use_dual,
         )
 
     return policy_fn
@@ -54,11 +50,11 @@ def make_service_level(config: dict):
     Config keys:
         target_service_level (float): e.g. 0.95
         lookback_days (int): how many days of history to use (default 14)
-        insurance_mode (str): "always" | "never" | "conditional"
+        dual_source (bool): use dual sourcing for all orders when enabled on round
     """
     target_sl = float(config["target_service_level"])
     lookback = int(config.get("lookback_days", 14))
-    ins_mode = config.get("insurance_mode", "never")
+    use_dual = _dual_source_from_config(config)
 
     z_table = {
         0.85: 1.04,
@@ -78,7 +74,7 @@ def make_service_level(config: dict):
     def policy_fn(state: dict) -> Decision:
         history = state["demand_history"][-lookback:]
         if len(history) < 3:
-            return Decision(order_quantity=50, buy_insurance=_insurance_decision(state, ins_mode))
+            return Decision(order_quantity=50, use_dual_source=use_dual)
 
         avg_demand = sum(history) / len(history)
         variance = sum((d - avg_demand) ** 2 for d in history) / len(history)
@@ -101,7 +97,7 @@ def make_service_level(config: dict):
 
         return Decision(
             order_quantity=order_qty,
-            buy_insurance=_insurance_decision(state, ins_mode),
+            use_dual_source=use_dual,
         )
 
     return policy_fn
@@ -117,11 +113,11 @@ def make_reorder_point(config: dict):
     Config keys:
         reorder_point (int): s - the threshold
         order_quantity (int): Q - fixed order size
-        insurance_mode (str): "always" | "never" | "conditional"
+        dual_source (bool): use dual sourcing for all orders when enabled on round
     """
     s = int(config["reorder_point"])
     q = int(config["order_quantity"])
-    ins_mode = config.get("insurance_mode", "never")
+    use_dual = _dual_source_from_config(config)
 
     def policy_fn(state: dict) -> Decision:
         if state["inventory_position"] <= s:
@@ -131,7 +127,7 @@ def make_reorder_point(config: dict):
 
         return Decision(
             order_quantity=order_qty,
-            buy_insurance=_insurance_decision(state, ins_mode),
+            use_dual_source=use_dual,
         )
 
     return policy_fn

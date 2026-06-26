@@ -310,7 +310,7 @@ export default function Leaderboard() {
                   <th className="px-4 py-3">Profit</th>
                   <th className="px-4 py-3">Service level</th>
                   <th className="px-4 py-3">Stockouts</th>
-                  <th className="px-4 py-3">Insurance</th>
+                  <th className="px-4 py-3">Dual source</th>
                   <th className="px-4 py-3">Daily P&amp;L</th>
                 </tr>
               </thead>
@@ -337,7 +337,7 @@ export default function Leaderboard() {
                       </td>
                       <td className="px-4 py-3 tabular-nums">{sl.toFixed(1)}%</td>
                       <td className="px-4 py-3 tabular-nums">{row.stockout_days}</td>
-                      <td className="px-4 py-3 tabular-nums">{formatMoney(row.insurance_spend)}</td>
+                      <td className="px-4 py-3 tabular-nums">{formatMoney(row.dual_source_spend)}</td>
                       <td className="px-4 py-3">
                         <MiniProfitSpark values={row.daily_profits} />
                       </td>

@@ -68,14 +68,23 @@ def generate_highlights(daily_log: list[DailyRecord]) -> list[str]:
             f"Consider lowering target inventory."
         )
 
-    # Insurance spend vs coverage
-    total_insurance = sum(r.insurance_cost for r in daily_log)
+    # Dual-source spend vs supplier failures
+    total_dual_source = sum(r.dual_source_premium for r in daily_log)
     total_swan_cost = sum(r.black_swan_cost for r in daily_log)
-    insured_days = sum(1 for r in daily_log if r.was_insured)
-    if insured_days > 0 and total_swan_cost == 0 and total_insurance > 100:
+    dual_days = sum(1 for r in daily_log if r.used_dual_source)
+    supplier_failures = sum(
+        1 for r in daily_log
+        if r.black_swan_event and "Supplier failure" in r.black_swan_event
+    )
+    if dual_days > 0 and supplier_failures == 0 and total_dual_source > 100:
         highlights.append(
-            f"Paid ${total_insurance:,.0f} in insurance premiums with zero black swan damage. "
-            f"Insurance may have been unnecessary this round."
+            f"Paid ${total_dual_source:,.0f} in dual-source premiums with no supplier failures. "
+            f"Dual sourcing may have been unnecessary this round."
+        )
+    elif dual_days == 0 and supplier_failures > 0 and total_swan_cost > 0:
+        highlights.append(
+            f"{supplier_failures} supplier failure(s) caused ${total_swan_cost:,.0f} in damage. "
+            f"Dual sourcing could have mitigated lost orders."
         )
 
     return highlights

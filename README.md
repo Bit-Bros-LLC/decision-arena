@@ -2,7 +2,24 @@
 
 A competitive inventory simulation game where students design operating policies, backtest them against historical data, and get scored on unseen actuals. Built as a companion tool for [The Decision Factory](https://a.co/d/0i9LPR5F) by Adam DeJans Jr. & John Brandon Elam.
 
-The public **landing page** (`/`) introduces the product; signed-in users use the **dashboard**, **rooms**, **seasons**, and **Learn** modules below.
+The public **landing page** (`/`) introduces the product; signed-in users use the **dashboard**, **onboarding** (checklist + guided tours), **rooms**, **seasons**, and **Learn** modules below.
+
+## Getting started
+
+First-run onboarding helps students and professors reach a successful play loop without instructor support. All onboarding is **optional** — it never blocks login or submission.
+
+| Feature | What it does |
+|---------|--------------|
+| **Dashboard checklist** | Role-based getting-started card. **Students:** watch intro → start solo season → join room (optional) → submit a policy. **Professors:** watch intro → create room → set up first season. Progress persists in browser `localStorage`, partially backed by server signals. |
+| **Guided tours** | Driver.js walkthroughs: **policy editor** (auto on first visit), **room management**, **season setup**. Restart any completed tour from the **Help** menu. |
+| **Intro video** | Set `VITE_INTRO_VIDEO_URL` (YouTube/Vimeo). Shown on first login (dismissible), from Help, and from Learn Lesson 0. |
+
+**Recommended first paths**
+
+- **Student (solo):** Dashboard → Create Private Solo Season → open round → Policy Editor (backtest → submit) → advance/score → Results
+- **Professor:** Dashboard → Create room → create season or round → activate → score → advance season
+
+Full implementation reference: [`docs/onboarding-plan.md`](docs/onboarding-plan.md).
 
 ## Modes at a glance
 
@@ -27,7 +44,7 @@ The public **landing page** (`/`) introduces the product; signed-in users use th
 ### Seasons and Season Sprints
 
 1. A season defines **N rounds**, **costs**, **starting inventory**, **round length**, and **lead-in history** length
-2. **Scenario engine**: pick a base **preset** and a **mode**—single scenario for every round, **random mix** from allowed presets, or **custom mix** (per-round preset)
+2. **Scenario engine**: pick a base **preset** and a **mode**—single scenario for every round, **random mix** from allowed presets, or **custom mix** (per-round preset). Browse presets with demand previews in the **Scenario Library** (`/scenarios`)
 3. **Contract updates** cap how many times a student can revise policy between rounds; changing policy may require signaling/unlocking the next round per season rules
 4. **Activate** the season, then **advance** to score the current round and unlock the next (professor-led in class; solo owners can drive their own sandbox)
 5. **Cumulative P&L** across scored rounds is tracked; use the **Season** tab on the leaderboard for a per-round matrix plus season total
@@ -42,14 +59,15 @@ The public **landing page** (`/`) introduces the product; signed-in users use th
 
 1. In a **room**, a professor can **publish** a template (name + season parameters)
 2. Students (or the professor) **start** a season from a template; each start is a **new season instance** with its own randomization where applicable
-3. The API can aggregate **cohort** standings across instances of the same template (see **Advanced** under API)—useful for comparing async runs; the main app focuses on in-season and round leaderboards
+3. **Cohort standings** aggregate results across season instances of the same template—open from a room’s Season Sprint templates in the UI, or via the cohort leaderboard API
 
 ## Learn
 
-An interactive lesson module (currently in **beta**) that teaches the concepts behind the game. Students work through bite-sized lessons at their own pace, each with reading content and a hands-on interactive element. The table below is about **Learn**; the rest of this README focuses on the **simulation game**.
+An interactive lesson module that teaches the concepts behind the game. Students work through bite-sized lessons at their own pace, each with reading content and a hands-on interactive element. The table below is about **Learn**; the rest of this README focuses on the **simulation game**.
 
 | # | Lesson | What Students Learn | Interactive Element |
 |---|--------|--------------------|--------------------|
+| 0 | **Enter the Arena** | How the Decision Factory maps to daily play — policies, dual sourcing, hidden actuals | Links to intro video; bridges Learn → game |
 | 1 | **Why Point Forecasts Fail** | Single-number predictions hide uncertainty | Reveal 8 demand scenarios behind a "perfect" forecast; pick an order qty and see stockout vs. waste rates |
 | 2 | **Probabilistic Forecasting** | Distributions, quantiles, confidence intervals | Drag sliders for mean/std dev; watch P10/P50/P90 quantile markers shift on a live bell curve |
 | 3 | **Economics of Decisions** | Cost asymmetry, the newsvendor critical ratio | Adjust overstocking/understocking costs; see the optimal order point shift on the distribution |
@@ -61,7 +79,7 @@ An interactive lesson module (currently in **beta**) that teaches the concepts b
 | 9 | **Why Simulate?** | Monte Carlo thinking and when formulas aren't enough | Progressive histogram builder — click +1/+10/+100/+1000 sims and watch outcomes materialize |
 | 10 | **Forecast Evaluation** | Why chasing MAPE can destroy your P&L | Two forecasters compete: the "accurate" one loses money due to bias; toggle cost asymmetry to see why |
 
-Progress is persisted per-user in the database. Adding a new lesson requires only a component file and one registry entry.
+Progress is persisted per-user in the database. Adding a new lesson requires only a component file and one registry entry in [`frontend/src/data/lessons.js`](frontend/src/data/lessons.js).
 
 ## The game
 
@@ -69,8 +87,20 @@ Students manage a virtual factory's inventory. Each simulated day:
 
 - Stochastic **demand** arrives and is fulfilled from inventory
 - **Orders** placed previously arrive after a **lead time**
-- **Black swan events** can hit: supplier failures, warehouse damage, demand spikes, cost shocks
-- **Insurance** can be purchased to mitigate black swan damage (at a daily premium cost)
+- **Supplier failure** events can cancel in-flight orders (unless the student uses dual sourcing)
+
+### Dual sourcing
+
+Optional second lever when a professor enables it for a round or season. Students trade higher unit cost for resilience when suppliers fail.
+
+| Who | Control | Effect |
+|-----|---------|--------|
+| **Professor** | `dual_source_enabled` toggle on round/season costs | Unlocks the student lever for that game |
+| **Professor** | `dual_source_premium_per_unit` | Extra procurement cost per unit when a student chooses dual sourcing |
+| **Professor** | `dual_source_rescue_pct` | Share of a dual-sourced order quantity that survives a supplier failure (remainder is lost) |
+| **Student** | `dual_source: true/false` on policy | Single source (default) vs dual source on every order |
+
+**Simulation behavior:** when dual sourcing is on, the engine charges the premium on order days and marks pending orders as dual-sourced. On supplier-failure events, single-source in-flight orders are fully cancelled; dual-sourced orders are partially rescued per `dual_source_rescue_pct`. Results and leaderboards report **dual-source spend**; highlights call out wasted premium or missed mitigation.
 
 Three policy templates are available:
 
@@ -82,9 +112,14 @@ Three policy templates are available:
 
 **Policy UX**: students can save **policy presets** (reusable parameter sets) and, where allowed, **un-submit** a policy before the deadline. Rounds may be **draft**, **active**, or **scored**; professors can **activate** or **delete** rounds as the workflow requires.
 
-**After scoring**, **results** include: headline **P&L**, service level, stockout days, insurance spend, and black swan hit counts; a **scenario review** chart (historical vs actual demand) with optional raw JSON; **daily P&L** bar chart; auto **highlights**; and a scrollable **daily log** (demand, fulfillment, orders, inventory, events).
+**After scoring**, **results** include: headline **P&L**, service level, stockout days, dual-source spend, and supplier failure hit counts; a **scenario review** chart (historical vs actual demand) with optional raw JSON; **daily P&L** bar chart; auto **highlights**; and a scrollable **daily log** (demand, fulfillment, orders, inventory, events).
 
-**Leaderboards**: switch between **Round** (one round) and **Season** (matrix of profit per round plus **season total**). The round view adds service level, stockouts, insurance, and a mini **daily P&L** sparkline per row; the season view uses **sticky** rank and name columns for wide tables.
+**Leaderboards**: switch between **Round** (one round) and **Season** (matrix of profit per round plus **season total**). The round view adds service level, stockouts, dual-source spend, and a mini **daily P&L** sparkline per row; the season view uses **sticky** rank and name columns for wide tables.
+
+### Professor tools
+
+- **Scenario Library** (`/scenarios`) — browse engine scenario presets with demand preview charts (amber = historical lead-in students see; sky = full season demand). Linked from season creator and room flows when picking mix modes.
+- **Round authoring** — create standalone rounds with optional dual sourcing, costs, and historical/actual JSON (see Admin round editor).
 
 ## Tech Stack
 
@@ -123,13 +158,17 @@ npm install
 npm run dev
 ```
 
-Vite’s dev server defaults to **`http://localhost:5173`**; API paths under `/auth`, `/rooms`, `/rounds`, `/policies`, `/policy-presets`, `/results`, `/leaderboard`, `/seasons`, and `/lessons` are **proxied** to `http://localhost:8000` (see `frontend/vite.config.js`).
+Vite’s dev server defaults to **`http://localhost:5173`**; API paths under `/auth`, `/rooms`, `/rounds`, `/policies`, `/policy-presets`, `/results`, `/leaderboard`, `/seasons`, `/lessons`, and `/users` are **proxied** to `http://localhost:8000` (see `frontend/vite.config.js`).
+
+For start/troubleshoot commands, see [`.cursor/skills/local-dev/SKILL.md`](.cursor/skills/local-dev/SKILL.md).
 
 GA4 is wired in the frontend with consent gating:
 
 - `VITE_GA_MEASUREMENT_ID` enables analytics wiring for production builds.
 - Analytics only initializes in production (`import.meta.env.PROD`).
 - Users must explicitly accept the consent banner before pageviews/events are sent.
+
+**Intro video:** set `VITE_INTRO_VIDEO_URL` in `frontend/.env` to a YouTube or Vimeo watch/embed URL (see `frontend/.env.example`). See **Getting started** above and [`docs/onboarding-plan.md`](docs/onboarding-plan.md) for the full onboarding system.
 
 ### Run the simulation standalone
 
@@ -154,12 +193,13 @@ decision-arena/
     routes/
       auth_routes.py        Register, login, profile, admin password reset, list users
       rooms.py              Rooms + join + complete (end class)
-      rounds.py               Standalone rounds: CRUD, activate, delete, score
+      rounds.py             Standalone rounds: CRUD, activate, delete, score
       policies.py           Save/update policy, get, delete (un-submit), backtest
       policy_presets.py     User policy presets
       results.py            Per-round results, round/season/cohort leaderboards
       lessons.py            Lesson progress
       seasons.py            Season CRUD, advance, templates, solo/sandbox lists
+      onboarding.py         GET /users/me/onboarding-status
     simulation/
       engine.py             run_simulation()
       season_scenarios.py   Presets, mixing, round slicing
@@ -172,16 +212,19 @@ decision-arena/
         LandingPage.jsx     Marketing landing
         Login.jsx, Dashboard.jsx, AccountSettings.jsx
         RoomView.jsx        Room: rounds, seasons, Season Sprint templates
-        Admin.jsx            Create/edit standalone rounds
+        Admin.jsx           Create/edit standalone rounds
         SeasonCreator.jsx, SeasonView.jsx, SeasonSprintBuilder.jsx, SoloSeasonsPage.jsx
+        ScenarioLibrary.jsx Browse scenario presets with demand previews
         PolicyEditor.jsx    Play round: backtest, submit
         RoundResults.jsx    Scored results, charts, log
-        Leaderboard.jsx     Round + season
-        LearnHub.jsx, LessonPage.jsx, lessons/   # interactive lessons
-      components/           e.g. NavBar, shared UI
-      data/lessons.js      Lesson registry
+        Leaderboard.jsx     Round + season + cohort
+        LearnHub.jsx, LessonPage.jsx, lessons/   # 11 interactive lessons (incl. EnterTheArena)
+      components/           NavBar, OnboardingTour, DashboardChecklist, HelpMenu, IntroVideoModal, …
+      context/              OnboardingContext, breadcrumb labels
+      lib/                  onboarding.js, policyEditorTour.js, professorRoomTour.js, professorSeasonTour.js, …
+      data/lessons.js       Lesson registry
       api.js                HTTP client
-      App.jsx              Routes
+      App.jsx               Routes
 ```
 
 ## API endpoints
@@ -195,6 +238,12 @@ decision-arena/
 | PUT | `/auth/profile` | Update profile |
 | POST | `/auth/admin-reset-password` | Admin reset (restricted) |
 | GET | `/auth/users` | List users (admin) |
+
+### Users
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/users/me/onboarding-status` | Server signals for onboarding checklist (policy submitted, solo season, rooms, etc.) |
 
 ### Rooms
 
@@ -236,7 +285,7 @@ decision-arena/
 | GET | `/results/{round_id}` | My results (after score) |
 | GET | `/leaderboard/{round_id}` | Round leaderboard |
 | GET | `/leaderboard/season/{season_id}` | Season standings (per-round + total) |
-| GET | `/leaderboard/room/{room_id}/template/{template_id}/cohort` | **Advanced**: cohort across season instances of one room template (API-first; not wired in the main UI) |
+| GET | `/leaderboard/room/{room_id}/template/{template_id}/cohort` | Cohort standings across season instances of one room template (also in UI from room Season Sprint templates) |
 
 ### Lessons
 
@@ -292,10 +341,11 @@ decision-arena/
 5. In GA4, confirm activity in **Realtime** or **DebugView**:
    - `page_view` events appear on route changes.
    - Custom events appear for key actions (`login_success`, `room_created`, `room_joined`, `policy_submitted`).
+   - Onboarding events when applicable (`onboarding_tour_started`, `onboarding_tour_completed`, `onboarding_checklist_item_done`, `onboarding_video_opened`).
 
 ## Roadmap and future work
 
-- Additional Learn lessons (multi-echelon inventory, demand modeling, EOQ)
+- More Learn lessons (multi-echelon inventory, EOQ)
 - Code policies (e.g. Monaco editor + sandboxed execution)
 - Richer **scenario construction** (e.g. from probability distributions beyond current presets and mix modes)
 - Daily drip reveal of actuals throughout a round

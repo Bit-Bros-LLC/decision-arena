@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   LineChart,
@@ -14,9 +14,15 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { api, getUser } from '../api';
+import { HelpHint } from '../components/HelpHint';
 import { UITooltip } from '../components/UITooltip';
+import { COST_TOOLTIPS } from '../lib/costTooltips';
 import { trackEvent } from '../lib/analytics';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import { useOnboarding } from '../context/OnboardingContext';
+import { runOnboardingTour } from '../lib/runOnboardingTour';
+import { isTourDone, TOUR_IDS } from '../lib/onboarding';
+import { buildPolicyEditorTourSteps } from '../lib/policyEditorTour';
 
 const TEMPLATES = [
   {
@@ -37,22 +43,21 @@ const TEMPLATES = [
 ];
 
 const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99, 0.99999];
-const INSURANCE_MODES = ['never', 'always', 'conditional'];
+const DUAL_SOURCE_HELP =
+  'When dual sourcing is enabled for this round, choose whether every order uses a backup supplier. Dual sourcing adds a per-unit premium (see cost parameters) but helps orders survive supplier failure events.';
 
-const INSURANCE_HELP =
-  'Each day you decide whether to buy supply-chain insurance. If insured, you pay the daily insurance premium (see cost parameters below) and black swan damage is reduced by your coverage percentage. Never: never buy insurance. Always: buy insurance every day. Conditional: buy insurance when on-hand inventory is below 30% of the average demand over the last 7 days.';
-
-const COST_TOOLTIPS = {
-  'Holding / unit':
-    'Cost charged per unit held in inventory at the end of each day.',
-  'Stockout penalty': 'Cost per unit of demand you cannot fulfill (lost sale / penalty).',
-  'Ordering (fixed)': 'Flat fee added every time you place an order, regardless of size.',
-  'Per-unit cost': 'Purchase or procurement cost for each unit you order.',
-  'Selling price': 'Revenue received for each unit of demand you fulfill.',
-  'Insurance premium': 'Cost you pay each day you choose to buy insurance.',
-  'Insurance coverage':
-    'Share of black swan damage covered by insurance when you are insured (remainder is out-of-pocket).',
-};
+function normalizePolicyConfig(policyType, raw) {
+  const base = { ...defaultConfig(policyType), ...raw };
+  if ('dual_source' in raw) {
+    base.dual_source = Boolean(raw.dual_source);
+  } else if (raw.insurance_mode === 'always') {
+    base.dual_source = true;
+  } else {
+    base.dual_source = false;
+  }
+  delete base.insurance_mode;
+  return base;
+}
 
 function formatMoney(n) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -139,18 +144,18 @@ function stdDev(arr) {
 function defaultConfig(policyType) {
   switch (policyType) {
     case 'order_up_to':
-      return { target_level: 200, insurance_mode: 'never' };
+      return { target_level: 200, dual_source: false };
     case 'service_level':
       return {
         target_service_level: 0.95,
         lookback_days: 14,
-        insurance_mode: 'never',
+        dual_source: false,
       };
     case 'reorder_point':
       return {
         reorder_point: 120,
         order_quantity: 150,
-        insurance_mode: 'never',
+        dual_source: false,
       };
     default:
       return {};
@@ -161,6 +166,8 @@ export default function PolicyEditor() {
   const { roundId } = useParams();
   const navigate = useNavigate();
   const user = getUser();
+  const { markChecklistItem, userId, userRole, tourRevision } = useOnboarding();
+  const tourStartedRef = useRef(false);
 
   const [round, setRound] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -274,7 +281,7 @@ export default function PolicyEditor() {
         setHasSubmittedPolicy(Boolean(pol));
         if (pol && pol.policy_type && pol.config) {
           setPolicyType(pol.policy_type);
-          setConfig({ ...defaultConfig(pol.policy_type), ...pol.config });
+          setConfig(normalizePolicyConfig(pol.policy_type, pol.config));
         }
         setPolicyLoaded(true);
         if (r?.season_id) {
@@ -291,6 +298,66 @@ export default function PolicyEditor() {
     };
   }, [roundId, refreshSeasonState]);
 
+  useEffect(() => {
+    tourStartedRef.current = false;
+  }, [roundId, tourRevision]);
+
+  const historical = round?.historical_data || [];
+  const costs = round?.costs || {};
+
+  useEffect(() => {
+    if (!userId || !policyLoaded || !round || loadError) return;
+    if (isTourDone(userId, TOUR_IDS.POLICY_EDITOR)) return;
+    if (tourStartedRef.current) return;
+
+    const dualSourceEnabled = Boolean(costs.dual_source_enabled);
+    const steps = buildPolicyEditorTourSteps({ dualSourceEnabled });
+
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 15;
+
+    function tryStartTour() {
+      if (cancelled || tourStartedRef.current) return;
+
+      const missing = steps.some((step) => !document.querySelector(step.element));
+      if (missing) {
+        if (attempt < maxAttempts) {
+          attempt += 1;
+          setTimeout(tryStartTour, 100);
+        }
+        return;
+      }
+
+      const firstElement = document.querySelector(steps[0].element);
+      firstElement?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+
+      tourStartedRef.current = true;
+      runOnboardingTour({
+        userId,
+        userRole,
+        tourId: TOUR_IDS.POLICY_EDITOR,
+        steps,
+      });
+    }
+
+    const frameId = requestAnimationFrame(tryStartTour);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [
+    userId,
+    userRole,
+    tourRevision,
+    roundId,
+    policyLoaded,
+    round,
+    loadError,
+    costs.dual_source_enabled,
+  ]);
+
   const handleUnlockRoundPolicy = async () => {
     if (!round?.season_id) return;
     setUnlockError('');
@@ -306,9 +373,6 @@ export default function PolicyEditor() {
       setUnlockingPolicy(false);
     }
   };
-
-  const historical = round?.historical_data || [];
-  const costs = round?.costs || {};
 
   const demandStats = useMemo(() => {
     const demands = historical.map((d) => d.demand).filter((x) => typeof x === 'number');
@@ -362,7 +426,7 @@ export default function PolicyEditor() {
 
   const applyPreset = useCallback((preset) => {
     setPolicyType(preset.policy_type);
-    setConfig({ ...defaultConfig(preset.policy_type), ...preset.config });
+    setConfig(normalizePolicyConfig(preset.policy_type, preset.config));
     setSelectedPresetId(preset.id);
     setBacktestResult(null);
     setBacktestError(null);
@@ -453,6 +517,7 @@ export default function PolicyEditor() {
         policy_type: policyType,
         is_season_round: isSeasonRound,
       });
+      markChecklistItem('submit_policy');
       setSubmitMsg(res?.message || 'Policy saved.');
       setHasSubmittedPolicy(true);
     } catch (e) {
@@ -530,6 +595,17 @@ export default function PolicyEditor() {
     Boolean(seasonMeta?.owner_user_id) &&
     seasonMeta.owner_user_id === user?.user_id &&
     (seasonMeta?.season_scope === 'sandbox' || Boolean(seasonMeta?.source_template_id));
+
+  const submitNextSteps = (() => {
+    if (!hasSubmittedPolicy) return null;
+    if (canScoreSoloRound) {
+      return 'Your policy is locked for this round. When you are ready, click Score Round to run it against hidden actuals and view results.';
+    }
+    if (isSeasonRound) {
+      return 'Your policy is locked for this round. After the deadline, your instructor scores the round — then check Round results and season standings.';
+    }
+    return 'Your policy is locked for this round. After the deadline, your instructor scores the round — then view Round results and the leaderboard.';
+  })();
 
   const handleScoreSoloRound = async () => {
     if (!round?.season_id) return;
@@ -622,7 +698,7 @@ export default function PolicyEditor() {
             <Stat label="Avg lead time" value={demandStats.avgLt.toFixed(2)} />
           </div>
 
-          <div className="mt-4 h-56 w-full min-w-0">
+          <div className="mt-4 h-56 w-full min-w-0" data-tour="historical-chart">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={lineData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -676,13 +752,19 @@ export default function PolicyEditor() {
             <CostRow label="Ordering (fixed)" v={costs.ordering_fixed} tooltip={COST_TOOLTIPS['Ordering (fixed)']} />
             <CostRow label="Per-unit cost" v={costs.per_unit_cost} tooltip={COST_TOOLTIPS['Per-unit cost']} />
             <CostRow label="Selling price" v={costs.selling_price} tooltip={COST_TOOLTIPS['Selling price']} />
-            <CostRow label="Insurance premium" v={costs.insurance_premium} tooltip={COST_TOOLTIPS['Insurance premium']} />
-            {costs.insurance_coverage_pct != null && (
-              <CostRow
-                label="Insurance coverage"
-                v={`${(Number(costs.insurance_coverage_pct) * 100).toFixed(0)}%`}
-                tooltip={COST_TOOLTIPS['Insurance coverage']}
-              />
+            {costs.dual_source_enabled && (
+              <>
+                <CostRow
+                  label="Dual-source premium / unit"
+                  v={costs.dual_source_premium_per_unit}
+                  tooltip={COST_TOOLTIPS['Dual-source premium / unit']}
+                />
+                <CostRow
+                  label="Supplier rescue %"
+                  v={`${(Number(costs.dual_source_rescue_pct ?? 1) * 100).toFixed(0)}%`}
+                  tooltip={COST_TOOLTIPS['Supplier rescue %']}
+                />
+              </>
             )}
           </ul>
         </section>
@@ -777,7 +859,7 @@ export default function PolicyEditor() {
               )}
             </div>
           )}
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3" data-tour="policy-templates">
             {TEMPLATES.map((t) => (
               <label
                 key={t.id}
@@ -802,7 +884,7 @@ export default function PolicyEditor() {
             ))}
           </div>
 
-          <div className="mt-4 space-y-4 border-t border-slate-700 pt-4">
+          <div className="mt-4 space-y-4 border-t border-slate-700 pt-4" data-tour="policy-params">
             {policyType === 'order_up_to' && (
               <>
                 <RangeField
@@ -812,14 +894,6 @@ export default function PolicyEditor() {
                   step={10}
                   value={config.target_level ?? 200}
                   onChange={(v) => updateConfig({ target_level: v })}
-                  disabled={!canExperiment}
-                />
-                <SelectField
-                  label="Insurance mode"
-                  helpText={INSURANCE_HELP}
-                  value={config.insurance_mode || 'never'}
-                  options={INSURANCE_MODES}
-                  onChange={(v) => updateConfig({ insurance_mode: v })}
                   disabled={!canExperiment}
                 />
               </>
@@ -841,14 +915,6 @@ export default function PolicyEditor() {
                   step={1}
                   value={config.lookback_days ?? 14}
                   onChange={(v) => updateConfig({ lookback_days: v })}
-                  disabled={!canExperiment}
-                />
-                <SelectField
-                  label="Insurance mode"
-                  helpText={INSURANCE_HELP}
-                  value={config.insurance_mode || 'never'}
-                  options={INSURANCE_MODES}
-                  onChange={(v) => updateConfig({ insurance_mode: v })}
                   disabled={!canExperiment}
                 />
               </>
@@ -873,15 +939,15 @@ export default function PolicyEditor() {
                   onChange={(v) => updateConfig({ order_quantity: v })}
                   disabled={!canExperiment}
                 />
-                <SelectField
-                  label="Insurance mode"
-                  helpText={INSURANCE_HELP}
-                  value={config.insurance_mode || 'never'}
-                  options={INSURANCE_MODES}
-                  onChange={(v) => updateConfig({ insurance_mode: v })}
-                  disabled={!canExperiment}
-                />
               </>
+            )}
+            {costs.dual_source_enabled && (
+              <DualSourceField
+                value={Boolean(config.dual_source)}
+                onChange={(v) => updateConfig({ dual_source: v })}
+                helpText={DUAL_SOURCE_HELP}
+                disabled={!canExperiment}
+              />
             )}
           </div>
 
@@ -890,6 +956,7 @@ export default function PolicyEditor() {
               type="button"
               onClick={runBacktest}
               disabled={!user || backtestLoading}
+              data-tour="backtest"
               className="rounded-lg border border-amber-500/50 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-amber-500/10 disabled:opacity-40"
             >
               {backtestLoading ? 'Running…' : 'Run Backtest'}
@@ -908,6 +975,7 @@ export default function PolicyEditor() {
               type="button"
               onClick={submitPolicy}
                   disabled={!canSubmitPolicy || submitLoading}
+              data-tour="submit-policy"
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 hover:bg-amber-400 disabled:opacity-40"
             >
               {submitLoading ? 'Saving…' : 'Submit Policy'}
@@ -939,6 +1007,12 @@ export default function PolicyEditor() {
             <p className="mt-2 text-sm text-emerald-400" role="status">
               {submitMsg}
             </p>
+          )}
+          {submitNextSteps && (
+            <div className="mt-3 rounded-lg border border-slate-600 bg-slate-900/60 px-3 py-2 text-sm text-slate-300">
+              <span className="font-medium text-slate-200">What happens next: </span>
+              {submitNextSteps}
+            </div>
           )}
         </section>
 
@@ -1126,17 +1200,38 @@ function RangeField({ label, min, max, step, value, onChange, disabled }) {
   );
 }
 
-function HelpHint({ text }) {
+function DualSourceField({ value, onChange, helpText, disabled }) {
   return (
-    <UITooltip content={text} placement="top">
-      <button
-        type="button"
-        className="ml-0.5 inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full border border-slate-500 text-[10px] font-semibold leading-none text-slate-400 hover:border-amber-500/60 hover:text-amber-400"
-        aria-label="How insurance works"
-      >
-        ?
-      </button>
-    </UITooltip>
+    <div data-tour="dual-sourcing">
+      <div className="flex items-center gap-1">
+        <span className="text-sm text-slate-300">Dual sourcing</span>
+        {helpText ? <HelpHint text={helpText} ariaLabel="How dual sourcing works" /> : null}
+      </div>
+      <div className="mt-2 flex gap-4">
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+          <input
+            type="radio"
+            name="dual_source"
+            checked={!value}
+            disabled={disabled}
+            onChange={() => onChange(false)}
+            className="accent-amber-500"
+          />
+          Single source
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
+          <input
+            type="radio"
+            name="dual_source"
+            checked={value}
+            disabled={disabled}
+            onChange={() => onChange(true)}
+            className="accent-amber-500"
+          />
+          Dual source
+        </label>
+      </div>
+    </div>
   );
 }
 
@@ -1153,7 +1248,7 @@ function SelectField({
     <div>
       <div className="flex items-center gap-1">
         <label className="text-sm text-slate-300">{label}</label>
-        {helpText ? <HelpHint text={helpText} /> : null}
+        {helpText ? <HelpHint text={helpText} ariaLabel="How this setting works" /> : null}
       </div>
       <select
         value={value}

@@ -16,6 +16,10 @@ import {
 } from 'recharts';
 import { api, getUser } from '../api';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import {
+  isResultsDebriefDismissed,
+  setResultsDebriefDismissed,
+} from '../lib/onboarding';
 
 function formatMoney(n) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -47,6 +51,7 @@ export default function RoundResults() {
   const [loading, setLoading] = useState(true);
   const [undoBusy, setUndoBusy] = useState(false);
   const [roomCrumbName, setRoomCrumbName] = useState(null);
+  const [showDebrief, setShowDebrief] = useState(false);
 
   const roomIdForCrumb = season?.room_id || round?.room_id;
 
@@ -123,6 +128,18 @@ export default function RoundResults() {
       cancelled = true;
     };
   }, [roundId]);
+
+  useEffect(() => {
+    const uid = user?.user_id;
+    if (!uid || loading || error || !data) return;
+    setShowDebrief(!isResultsDebriefDismissed(uid));
+  }, [user?.user_id, loading, error, data]);
+
+  const dismissDebrief = () => {
+    const uid = user?.user_id;
+    if (uid) setResultsDebriefDismissed(uid, true);
+    setShowDebrief(false);
+  };
 
   if (loading) {
     return (
@@ -247,6 +264,42 @@ export default function RoundResults() {
           </div>
         </div>
 
+        {showDebrief && (
+          <section className="rounded-xl border border-sky-500/40 bg-sky-500/5 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-sky-300">Reading your results</h2>
+                <p className="mt-2 text-sm text-slate-300">
+                  Low service level or high stockout days often mean your safety stock or order-up-to
+                  level was too low for demand variability. Strong P&amp;L with stockouts can still
+                  mean you left money on the table from lost sales.
+                </p>
+                <p className="mt-2 text-sm text-slate-400">
+                  Revisit{' '}
+                  <Link to="/learn/safety-stock" className="text-amber-500 hover:text-amber-400">
+                    Safety Stock
+                  </Link>{' '}
+                  or{' '}
+                  <Link
+                    to="/learn/probabilistic-forecasting"
+                    className="text-amber-500 hover:text-amber-400"
+                  >
+                    Probabilistic Forecasting
+                  </Link>{' '}
+                  in Learn, then tune your policy for the next round.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={dismissDebrief}
+                className="shrink-0 text-xs text-slate-500 underline hover:text-slate-300"
+              >
+                Dismiss
+              </button>
+            </div>
+          </section>
+        )}
+
         <section className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg">
           <h2 className="mb-4 text-lg font-medium text-amber-500">Summary</h2>
           <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -271,9 +324,9 @@ export default function RoundResults() {
               </dd>
             </div>
             <div>
-              <dt className="text-sm text-slate-400">Insurance spend</dt>
+              <dt className="text-sm text-slate-400">Dual-source spend</dt>
               <dd className="text-2xl font-semibold tabular-nums text-slate-100">
-                {formatMoney(data.insurance_spend)}
+                {formatMoney(data.dual_source_spend)}
               </dd>
             </div>
             <div>
