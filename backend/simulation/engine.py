@@ -17,59 +17,76 @@ from .models import (
 from .highlights import generate_highlights
 
 
+def _apply_supplier_failure(
+    details: dict,
+    state: SimState,
+    per_unit_cost: float,
+    rescue_pct: float,
+) -> tuple[float, str]:
+    """Apply supplier failure damage and return (cost, description)."""
+    duration = details.get("duration_days", 3)
+    cutoff = state.day + duration
+
+    cancelled_count = 0
+    rescued_lines: list[str] = []
+    total_damage = 0.0
+    kept: list[PendingOrder] = []
+
+    for order in state.pending_orders:
+        if order.arrival_day > cutoff:
+            kept.append(order)
+            continue
+
+        if order.dual_sourced:
+            rescued_qty = int(order.quantity * rescue_pct)
+            lost_qty = order.quantity - rescued_qty
+            if lost_qty > 0:
+                total_damage += lost_qty * per_unit_cost
+            if rescued_qty > 0:
+                kept.append(
+                    PendingOrder(
+                        quantity=rescued_qty,
+                        arrival_day=order.arrival_day,
+                        dual_sourced=True,
+                    )
+                )
+                if lost_qty > 0:
+                    rescued_lines.append(
+                        f"dual-source order: {rescued_qty} of {order.quantity} units rescued"
+                    )
+            else:
+                cancelled_count += 1
+        else:
+            cancelled_count += 1
+            total_damage += order.quantity * per_unit_cost
+
+    state.pending_orders = kept
+
+    desc = f"Supplier failure ({duration} days). {cancelled_count} orders fully lost."
+    if rescued_lines:
+        desc += " " + "; ".join(rescued_lines) + "."
+    if total_damage > 0:
+        desc += f" Damage: ${total_damage:.0f}."
+
+    return total_damage, desc
+
+
 def _apply_black_swan(
     event_type: str,
     details: dict,
     state: SimState,
-    has_insurance: bool,
-    coverage_pct: float,
+    costs: CostParams,
 ) -> tuple[float, str]:
     """Apply black swan damage and return (cost, description)."""
-
     if event_type == "supplier_failure":
-        duration = details.get("duration_days", 3)
-        # Cancel all pending orders that would arrive during the disruption
-        cancelled = []
-        kept = []
-        for order in state.pending_orders:
-            if order.arrival_day <= state.day + duration:
-                cancelled.append(order)
-            else:
-                kept.append(order)
-        state.pending_orders = kept
-        raw_damage = sum(o.quantity for o in cancelled) * 5.0  # lost order value
-        desc = f"Supplier failure ({duration} days). {len(cancelled)} orders cancelled."
+        return _apply_supplier_failure(
+            details,
+            state,
+            costs.per_unit_cost,
+            costs.dual_source_rescue_pct,
+        )
 
-    elif event_type == "demand_spike":
-        # Demand is already set high by the professor in the scenario data.
-        # The "damage" is the extra stockout cost that naturally occurs.
-        # We just flag it as a notable event; no extra artificial cost.
-        return 0.0, f"Demand spike (multiplier in scenario data)"
-
-    elif event_type == "warehouse_damage":
-        loss_pct = details.get("inventory_loss_pct", 0.5)
-        units_lost = int(state.inventory * loss_pct)
-        state.inventory -= units_lost
-        raw_damage = units_lost * 10.0  # replacement value
-        desc = f"Warehouse damage. Lost {units_lost} units ({loss_pct:.0%} of inventory)."
-
-    elif event_type == "cost_shock":
-        multiplier = details.get("cost_multiplier", 2.0)
-        # One-time cost hit representing price spikes on existing orders
-        raw_damage = 500.0 * multiplier
-        desc = f"Cost shock ({multiplier}x). Emergency procurement surcharge."
-
-    else:
-        return 0.0, f"Unknown event: {event_type}"
-
-    if has_insurance:
-        actual_damage = raw_damage * (1.0 - coverage_pct)
-        desc += f" Insurance covered ${raw_damage * coverage_pct:.0f} of ${raw_damage:.0f}."
-    else:
-        actual_damage = raw_damage
-        desc += f" NO INSURANCE. Full damage: ${raw_damage:.0f}."
-
-    return actual_damage, desc
+    return 0.0, f"Unknown or legacy event (no effect): {event_type}"
 
 
 def simulate_day(
@@ -88,7 +105,7 @@ def simulate_day(
         state.inventory += order.quantity
     state.pending_orders = [o for o in state.pending_orders if o.arrival_day > state.day]
 
-    # 2. Black swan
+    # 2. Black swan (supplier failure only)
     swan_cost = 0.0
     swan_event_str = None
     if day_scenario.black_swan is not None:
@@ -96,8 +113,7 @@ def simulate_day(
             day_scenario.black_swan.event_type,
             day_scenario.black_swan.details,
             state,
-            state.has_insurance,
-            costs.insurance_coverage_pct,
+            costs,
         )
 
     # 3. Sell
@@ -109,21 +125,27 @@ def simulate_day(
     revenue = sold * costs.selling_price
     holding_cost = max(state.inventory, 0) * costs.holding_per_unit
     stockout_cost = unfulfilled * costs.stockout_penalty
-    insurance_cost = costs.insurance_premium if decision.buy_insurance else 0.0
 
+    use_dual = costs.dual_source_enabled and decision.use_dual_source
+    dual_source_premium = 0.0
     order_cost = 0.0
     if decision.order_quantity > 0:
-        order_cost = costs.ordering_fixed + (decision.order_quantity * costs.per_unit_cost)
+        unit_cost = costs.per_unit_cost
+        if use_dual:
+            unit_cost += costs.dual_source_premium_per_unit
+            dual_source_premium = costs.dual_source_premium_per_unit * decision.order_quantity
+        order_cost = costs.ordering_fixed + (decision.order_quantity * unit_cost)
         state.pending_orders.append(
             PendingOrder(
                 quantity=decision.order_quantity,
                 arrival_day=state.day + day_scenario.lead_time,
+                dual_sourced=use_dual,
             )
         )
 
-    daily_profit = revenue - holding_cost - stockout_cost - order_cost - insurance_cost - swan_cost
+    daily_profit = revenue - holding_cost - stockout_cost - order_cost - swan_cost
+
     state.cash += daily_profit
-    state.has_insurance = decision.buy_insurance
     state.demand_history.append(day_scenario.demand)
     state.lead_time_history.append(day_scenario.lead_time)
 
@@ -139,10 +161,10 @@ def simulate_day(
         holding_cost=holding_cost,
         stockout_cost=stockout_cost,
         order_cost=order_cost,
-        insurance_cost=insurance_cost,
+        dual_source_premium=dual_source_premium,
         black_swan_event=swan_event_str,
         black_swan_cost=swan_cost,
-        was_insured=decision.buy_insurance,
+        used_dual_source=use_dual,
         daily_profit=daily_profit,
     )
 
@@ -194,7 +216,7 @@ def run_simulation(
                 raise TypeError(f"Policy must return a Decision, got {type(decision)}")
             decision.order_quantity = max(0, int(decision.order_quantity))
         except Exception as e:
-            decision = Decision(order_quantity=0, buy_insurance=False)
+            decision = Decision(order_quantity=0, use_dual_source=False)
             errors.append({"day": day_scenario.day, "error": str(e), "used_default": True})
 
         record = simulate_day(state, decision, day_scenario, costs)
@@ -205,7 +227,7 @@ def run_simulation(
     total_sold = sum(r.sold for r in daily_log)
     service_level = total_sold / total_demand if total_demand > 0 else 1.0
     stockout_days = sum(1 for r in daily_log if r.unfulfilled > 0)
-    insurance_spend = sum(r.insurance_cost for r in daily_log)
+    dual_source_spend = sum(r.dual_source_premium for r in daily_log)
     black_swan_hits = sum(1 for r in daily_log if r.black_swan_event is not None)
     black_swan_total_cost = sum(r.black_swan_cost for r in daily_log)
 
@@ -217,7 +239,7 @@ def run_simulation(
         stockout_days=stockout_days,
         total_demand=total_demand,
         total_sold=total_sold,
-        insurance_spend=insurance_spend,
+        dual_source_spend=dual_source_spend,
         black_swan_hits=black_swan_hits,
         black_swan_total_cost=black_swan_total_cost,
         daily_log=daily_log,
