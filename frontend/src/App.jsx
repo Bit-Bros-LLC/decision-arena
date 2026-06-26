@@ -11,6 +11,7 @@ import SeasonCreator from './pages/SeasonCreator'
 import SeasonView from './pages/SeasonView'
 import SeasonSprintBuilder from './pages/SeasonSprintBuilder'
 import ScenarioLibrary from './pages/ScenarioLibrary'
+import StoryLibrary from './pages/StoryLibrary'
 import SoloSeasonsPage from './pages/SoloSeasonsPage'
 import AccountSettings from './pages/AccountSettings'
 import LearnHub from './pages/LearnHub'
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="/room/:roomId/season-sprint/new" element={<SeasonSprintBuilder />} />
           <Route path="/season-sprint/new" element={<SeasonSprintBuilder />} />
           <Route path="/scenarios" element={<ScenarioLibrary />} />
+          <Route path="/stories" element={<StoryLibrary />} />
           <Route path="/season-sprint/:seasonId" element={<SeasonView />} />
           <Route path="/solo-seasons" element={<SoloSeasonsPage />} />
           <Route path="/round/:roundId" element={<PolicyEditor />} />

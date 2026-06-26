@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, getUser } from '../api';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import Narrative from '../components/Narrative';
+import StoryNews from '../components/StoryNews';
 
 function statusColor(status) {
   if (status === 'active') return 'text-amber-400';
@@ -245,6 +247,42 @@ export default function SeasonView() {
           role="alert"
         >
           {error}
+        </div>
+      )}
+
+      {(season.narrative || (season.news && season.news.length > 0)) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {season.narrative && (
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-500">
+                The story so far
+              </h2>
+              <Narrative text={season.narrative} className="mt-2" />
+            </div>
+          )}
+          {season.news && season.news.length > 0 && (
+            <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-500">
+                Newsroom
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Watch for forecasts about upcoming months — they can help you decide when to spend a
+                contract change.
+              </p>
+              <div className="mt-3">
+                <StoryNews
+                  news={season.news}
+                  activeRoundNumber={
+                    isProfessor
+                      ? null
+                      : activeRound?.round_number ??
+                        (season.status === 'completed' ? season.total_rounds : 0)
+                  }
+                  emptyText="No news yet — check back once the season starts."
+                />
+              </div>
+            </div>
+          )}
         </div>
       )}
 

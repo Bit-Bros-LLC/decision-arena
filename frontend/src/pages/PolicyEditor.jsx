@@ -23,6 +23,7 @@ import { useOnboarding } from '../context/OnboardingContext';
 import { runOnboardingTour } from '../lib/runOnboardingTour';
 import { isTourDone, TOUR_IDS } from '../lib/onboarding';
 import { buildPolicyEditorTourSteps } from '../lib/policyEditorTour';
+import StoryNews from '../components/StoryNews';
 
 const TEMPLATES = [
   {
@@ -683,6 +684,27 @@ export default function PolicyEditor() {
             {unlockError && <span className="text-red-400">{unlockError}</span>}
           </div>
         )}
+
+        {isSeasonRound && Array.isArray(seasonMeta?.news) && (() => {
+          const current = Number(round.round_number);
+          const relevant = seasonMeta.news.filter(
+            (n) => Number(n.reveal_round) <= current && Number(n.about_round) >= current,
+          );
+          if (relevant.length === 0) return null;
+          return (
+            <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-amber-500">
+                Newsroom
+              </h2>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Use forecasts to decide whether spending a contract change now is worth it.
+              </p>
+              <div className="mt-2">
+                <StoryNews news={relevant} activeRoundNumber={current} />
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="flex flex-col gap-6 p-4 lg:flex-row lg:items-start lg:gap-4 lg:p-6">

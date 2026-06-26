@@ -115,6 +115,10 @@ class SeasonRow(Base):
     starting_inventory = Column(Integer, nullable=False, default=100)
     round_duration_days = Column(Integer, nullable=False, default=30)
     historical_leadin_days = Column(Integer, nullable=False, default=60)
+    # When a season was instantiated from an authored narrative story package.
+    story_package_id = Column(String, nullable=True)
+    narrative = Column(Text, nullable=True)
+    news = Column(JsonColumn, nullable=False, default=list)
     status = Column(String, nullable=False, default="draft")  # "draft" | "active" | "completed"
     created_at = Column(DateTime, default=_now)
 
@@ -354,6 +358,15 @@ def _migrate_schema():
                 alters.append("ALTER TABLE seasons ADD COLUMN mix_config JSON NOT NULL DEFAULT '{}'")
             else:
                 alters.append("ALTER TABLE seasons ADD COLUMN mix_config JSONB NOT NULL DEFAULT '{}'::jsonb")
+        if "story_package_id" not in season_cols:
+            alters.append("ALTER TABLE seasons ADD COLUMN story_package_id VARCHAR")
+        if "narrative" not in season_cols:
+            alters.append("ALTER TABLE seasons ADD COLUMN narrative TEXT")
+        if "news" not in season_cols:
+            if is_sqlite:
+                alters.append("ALTER TABLE seasons ADD COLUMN news JSON NOT NULL DEFAULT '[]'")
+            else:
+                alters.append("ALTER TABLE seasons ADD COLUMN news JSONB NOT NULL DEFAULT '[]'::jsonb")
         if alters:
             with engine.begin() as conn:
                 for stmt in alters:

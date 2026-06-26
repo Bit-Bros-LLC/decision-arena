@@ -84,6 +84,8 @@ export const api = {
     request(`/leaderboard/room/${roomId}/template/${templateId}/cohort`),
 
   listSeasonPresets: () => request('/seasons/presets'),
+  listStoryPackages: () => request('/seasons/story-packages'),
+  previewStoryPackage: (storyId) => request(`/seasons/story-packages/${storyId}/preview`),
   previewSeason: (body) => request('/seasons/preview', { method: 'POST', body: JSON.stringify(body) }),
   listRoomSeasons: (roomId) => request(`/seasons/room/${roomId}`),
   listSandboxSeasons: () => request('/seasons/sandbox'),

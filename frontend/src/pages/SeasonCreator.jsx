@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, getUser } from '../api';
 import { FieldLabel } from '../components/FieldLabel';
 import SeasonModeConfigurator from '../components/SeasonModeConfigurator';
 import PresetPreviewModal from '../components/PresetPreviewModal';
+import StoryPackageCard from '../components/StoryPackageCard';
+import StoryNews from '../components/StoryNews';
+import Narrative from '../components/Narrative';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 import { useOnboarding } from '../context/OnboardingContext';
 import { COST_TOOLTIPS } from '../lib/costTooltips';
@@ -53,6 +56,7 @@ function nextSundayMidnightLocal() {
 export default function SeasonCreator() {
   const { roomId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const user = getUser();
   const isProfessor = user?.role === 'professor';
   const { markChecklistItem, userId, userRole, tourRevision } = useOnboarding();
@@ -92,6 +96,18 @@ export default function SeasonCreator() {
   const [cardModalLoading, setCardModalLoading] = useState(false);
   const [cardModalError, setCardModalError] = useState(null);
   const [cardModalChart, setCardModalChart] = useState({
+    chartData: [],
+    boundary: null,
+    roundBoundaries: [],
+  });
+
+  const [stories, setStories] = useState([]);
+  const [storiesError, setStoriesError] = useState(null);
+  const [selectedStoryId, setSelectedStoryId] = useState(null);
+  const [storyChartOpen, setStoryChartOpen] = useState(false);
+  const [storyChartLoading, setStoryChartLoading] = useState(false);
+  const [storyChartError, setStoryChartError] = useState(null);
+  const [storyChart, setStoryChart] = useState({
     chartData: [],
     boundary: null,
     roundBoundaries: [],
@@ -142,6 +158,63 @@ export default function SeasonCreator() {
       cancelled = true;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await api.listStoryPackages();
+        if (!cancelled) setStories(Array.isArray(list) ? list : []);
+      } catch (err) {
+        if (!cancelled) setStoriesError(err.message || 'Could not load stories');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectedStory = useMemo(
+    () => stories.find((s) => s.id === selectedStoryId) || null,
+    [stories, selectedStoryId],
+  );
+  const storyLocked = Boolean(selectedStory);
+
+  const applyStory = (story) => {
+    if (!story) {
+      setSelectedStoryId(null);
+      return;
+    }
+    setSelectedStoryId(story.id);
+    setTotalRounds(story.total_rounds);
+    setContractUpdates(story.contract_updates_allowed);
+    setRoundDuration(story.round_duration_days);
+    setLeadinDays(story.historical_leadin_days);
+    setStartingInventory(story.starting_inventory);
+    setCosts({ ...DEFAULT_COSTS, ...(story.costs || {}) });
+    setSubmitError(null);
+    setStoryChartError(null);
+  };
+
+  // Auto-fill the season name as "Story title — Class name" once both are known.
+  useEffect(() => {
+    if (selectedStory && roomLabel) {
+      setName(`${selectedStory.title} — ${roomLabel}`);
+    }
+  }, [selectedStory, roomLabel]);
+
+  // Deep link from the story library: /room/:id/create-season?story=<id>
+  const storyParamRef = useRef(false);
+  useEffect(() => {
+    if (storyParamRef.current) return;
+    const wanted = searchParams.get('story');
+    if (!wanted || stories.length === 0) return;
+    const match = stories.find((s) => s.id === wanted);
+    if (match) {
+      storyParamRef.current = true;
+      applyStory(match);
+    }
+  }, [searchParams, stories]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     setCustomRoundPresets((prev) => {
@@ -338,6 +411,26 @@ export default function SeasonCreator() {
     }
   };
 
+  const openStoryDemandPreview = async () => {
+    if (!selectedStory) return;
+    setStoryChartError(null);
+    setStoryChartLoading(true);
+    try {
+      const res = await api.previewStoryPackage(selectedStory.id);
+      const transformed = transformPreviewResponse(res);
+      setStoryChart({
+        chartData: transformed.chartData,
+        boundary: transformed.boundary,
+        roundBoundaries: transformed.roundBoundaries,
+      });
+      setStoryChartOpen(true);
+    } catch (err) {
+      setStoryChartError(err.message || 'Could not generate preview');
+    } finally {
+      setStoryChartLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
@@ -346,6 +439,34 @@ export default function SeasonCreator() {
       setSubmitError('Please enter a season name');
       return;
     }
+    if (!firstDeadline) {
+      setSubmitError('Set a first-round deadline.');
+      return;
+    }
+    const deadlineIsoBase = firstDeadline.length === 16 ? `${firstDeadline}:00` : firstDeadline;
+
+    // Story package path: the backend derives every mechanical setting from the
+    // authored package, so we only send the name, deadline, and story id.
+    if (storyLocked) {
+      setSubmitting(true);
+      try {
+        const res = await api.createSeason({
+          room_id: roomId,
+          name: trimmedName,
+          story_package_id: selectedStory.id,
+          costs: selectedStory.costs,
+          first_round_deadline: deadlineIsoBase,
+        });
+        markChecklistItem('create_season');
+        navigate(`/room/${roomId}/season/${res.id}`);
+      } catch (err) {
+        setSubmitError(err.message || 'Failed to create season');
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const modeError = validateSeasonModeConfig(
       seasonMode,
       activePresetId,
@@ -413,6 +534,52 @@ export default function SeasonCreator() {
         onSubmit={handleSubmit}
         className="space-y-8 rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg"
       >
+        <fieldset className="space-y-4">
+          <legend className="text-lg font-medium text-amber-500">Start from a story</legend>
+          <p className="text-sm text-slate-400">
+            Pick a ready-made narrative season — rounds, contract changes, duration, inventory,
+            costs, demand timeline, and student news are all pre-built for you. Or choose{' '}
+            <span className="text-slate-300">Custom configuration</span> to build your own.{' '}
+            <a
+              href={`/stories?room=${roomId}`}
+              className="text-amber-500 hover:text-amber-400"
+            >
+              Browse the full story library →
+            </a>
+          </p>
+          {storiesError && <p className="text-sm text-red-400">{storiesError}</p>}
+          <div className="grid gap-3 sm:grid-cols-3">
+            {stories.map((story) => (
+              <StoryPackageCard
+                key={story.id}
+                story={story}
+                selected={selectedStoryId === story.id}
+                onSelect={applyStory}
+                onPreview={(s) => {
+                  if (selectedStoryId !== s.id) applyStory(s);
+                  setTimeout(openStoryDemandPreview, 0);
+                }}
+              />
+            ))}
+          </div>
+          <label
+            className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+              storyLocked
+                ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800'
+                : 'border-amber-500 bg-amber-500/5 text-amber-300'
+            }`}
+          >
+            <input
+              type="radio"
+              name="story-choice"
+              checked={!storyLocked}
+              onChange={() => setSelectedStoryId(null)}
+              className="accent-amber-500"
+            />
+            Custom configuration (build the season manually)
+          </label>
+        </fieldset>
+
         <div>
           <FieldLabel label="Season name" help={SEASON_CREATOR_COPY.seasonName} />
           <input
@@ -425,6 +592,79 @@ export default function SeasonCreator() {
           <p className="mt-1 text-xs text-slate-500">{SEASON_CREATOR_COPY.seasonNameHelper}</p>
         </div>
 
+        {storyLocked && (
+          <>
+            <fieldset className="space-y-4">
+              <legend className="text-lg font-medium text-amber-500">
+                {selectedStory.title} · setup
+              </legend>
+              <p className="text-xs text-slate-500">
+                These settings are pre-selected by the story and can't be edited. Choose{' '}
+                <span className="text-slate-300">Custom configuration</span> above to build your own.
+              </p>
+              <dl className="grid gap-3 sm:grid-cols-3">
+                {[
+                  ['Total rounds', selectedStory.total_rounds],
+                  ['Contract changes', selectedStory.contract_updates_allowed],
+                  ['Round duration', `${selectedStory.round_duration_days} days`],
+                  ['Historical lead-in', `${selectedStory.historical_leadin_days} days`],
+                  ['Starting inventory', selectedStory.starting_inventory],
+                  ['Dual sourcing', selectedStory.costs?.dual_source_enabled ? 'Enabled' : 'Off'],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
+                    <dt className="text-xs text-slate-500">{label}</dt>
+                    <dd className="text-sm font-semibold tabular-nums text-slate-100">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              <div>
+                <button
+                  type="button"
+                  onClick={openStoryDemandPreview}
+                  disabled={storyChartLoading}
+                  className="rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700 disabled:opacity-50"
+                >
+                  {storyChartLoading ? 'Generating…' : 'Preview demand chart'}
+                </button>
+                {storyChartError && <p className="mt-2 text-sm text-red-400">{storyChartError}</p>}
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-3">
+              <legend className="text-lg font-medium text-amber-500">The story</legend>
+              <Narrative text={selectedStory.narrative} />
+            </fieldset>
+
+            <fieldset className="space-y-3">
+              <legend className="text-lg font-medium text-amber-500">Newsroom preview</legend>
+              <p className="text-xs text-slate-500">
+                Students see each item once its round arrives. Forecasts hint at upcoming months so
+                they can decide whether to spend a contract change.
+              </p>
+              <StoryNews news={selectedStory.news} activeRoundNumber={null} />
+            </fieldset>
+
+            <div data-tour="season-deadline">
+              <FieldLabel
+                label="First round deadline"
+                help={SEASON_CREATOR_COPY.firstRoundDeadline}
+              />
+              <input
+                type="datetime-local"
+                value={firstDeadline}
+                onChange={(e) => setFirstDeadline(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Subsequent rounds auto-schedule {selectedStory.round_duration_days} days apart. You
+                advance each round manually from the season dashboard.
+              </p>
+            </div>
+          </>
+        )}
+
+        {!storyLocked && (
+        <>
         <fieldset className="space-y-4" data-tour="season-rules">
           <legend className="text-lg font-medium text-amber-500">Season rules</legend>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -650,6 +890,8 @@ export default function SeasonCreator() {
           </p>
           {chartError && <p className="mt-2 text-sm text-red-400">{chartError}</p>}
         </div>
+        </>
+        )}
 
         {submitError && <p className="text-sm text-red-400">{submitError}</p>}
 
@@ -692,6 +934,16 @@ export default function SeasonCreator() {
         chartData={previewChartData}
         boundary={previewBoundary}
         roundBoundaries={previewRoundBoundaries}
+      />
+
+      <PresetPreviewModal
+        open={storyChartOpen && storyChart.boundary != null}
+        onClose={() => setStoryChartOpen(false)}
+        title={selectedStory ? `${selectedStory.title} — demand timeline` : 'Story demand'}
+        subtitle="Amber = historical lead-in students see on day one; sky = the full authored season timeline. Vertical lines mark round boundaries."
+        chartData={storyChart.chartData}
+        boundary={storyChart.boundary}
+        roundBoundaries={storyChart.roundBoundaries}
       />
     </div>
   );
