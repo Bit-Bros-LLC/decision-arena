@@ -14,6 +14,7 @@ export default defineConfig({
       '/leaderboard': 'http://127.0.0.1:8000',
       '/seasons': 'http://127.0.0.1:8000',
       '/lessons': 'http://127.0.0.1:8000',
+      '/users': 'http://127.0.0.1:8000',
     },
   },
 })

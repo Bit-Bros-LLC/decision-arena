@@ -1,10 +1,10 @@
-# Onboarding Master Plan
+# Onboarding Reference
 
-Living plan for Decision Arena first-run experience. Use this doc as the source of truth when implementing slices in Cursor (one slice ≈ one PR).
+Shipped reference for Decision Arena first-run experience (checklist, Driver.js tours, intro video, preset previews, polish).
 
-**Last updated:** 2026-06-24
+**Last updated:** 2026-06-25
 
-> **Implementation status (2026-06-24):** Slices 1–8 and Wave 1 tracks (mix-mode parity, professor-room gate, first-login video, polish) are **code complete in the working tree**. Many deliverables remain **untracked/uncommitted** (pre-flight not done). **Integration smoke test** checklist in `docs/onboarding-multitask.md` has not been run. Deliverable checkboxes below reflect code presence; acceptance criteria are not yet verified end-to-end.
+> **Status: Shipped.** Slices 1–8 and Wave 1 tracks landed in commits `0557f35` (foundation), `3fbaf5d` (slices 2–5), and `a54bbc8` (slices 6–8 + Wave 1). Integration smoke test passed 2026-06-25 (see [Verification](#verification)). Parallel execution guide archived at [`docs/archive/onboarding-multitask.md`](archive/onboarding-multitask.md).
 
 ---
 
@@ -89,7 +89,7 @@ Use **Driver.js** (`driver.js` package). One shared wrapper: `frontend/src/compo
 // Shape: { tours: { [tourId]: 'completed' | 'skipped' }, checklist: { ... }, videoDismissed: boolean }
 ```
 
-- Key tours by stable ids: `student-dashboard`, `policy-editor`, `professor-room`, `professor-season`.
+- Key tours by stable ids: `policy-editor`, `professor-room`, `professor-season`. (Slice 2 uses a dashboard **checklist card**, not a Driver tour.)
 - `getUser().id` from `frontend/src/api.js` scopes storage per account.
 - **Restart tour** clears one tour id from storage (via Help menu).
 
@@ -367,15 +367,30 @@ App team only executes **slice 7** when URL is available; slices 1–6 do not bl
 
 ---
 
-## How to work in Cursor
+## Verification
 
-1. Open a new Agent chat per slice.
-2. First message: `Implement slice N from docs/onboarding-plan.md. Follow shared conventions. Minimal diff.`
-3. Point at existing patterns: `PolicyEditor.jsx` tooltips, `SeasonCreator` preview modal, `trackEvent` usage in `Dashboard.jsx`.
-4. End by asking for **PR template** test steps (see `.github/pull_request_template.md`).
-5. Do **not** combine slices unless explicitly doing a fix-up PR.
+Integration smoke test run **2026-06-25** against local dev stack (`127.0.0.1:8000` + `localhost:5173`).
 
-### Suggested PR titles
+| Check | Result | Method |
+|-------|--------|--------|
+| Class season `random_mix` creates | Pass | API: `POST /seasons` with professor token |
+| Solo sprint `custom_mix` creates | Pass | API: `POST /seasons` sandbox scope |
+| Mix explainer on both builders | Pass | `SeasonModeConfigurator` `MODE_EXPLAINER` wired in SeasonCreator + SeasonSprintBuilder |
+| Non-owner professor room — no tour | Pass | `RoomView.jsx` gate: `room.professor_id !== user.user_id` |
+| Owner professor room — tour on first visit | Pass | `RoomView.jsx` auto-start when owner + tour not done |
+| First-login modal once; dismiss persists | Pass | `OnboardingContext.jsx` + `isVideoDismissed` in `onboarding.js` |
+| Student/professor empty dashboard CTAs | Pass | `Dashboard.jsx` role-specific empty states |
+| Results debrief once + dismiss | Pass | `RoundResults.jsx` + `resultsDebriefDismissed` persistence |
+| Post-submit next-steps copy | Pass | `PolicyEditor.jsx` `submitNextSteps` block |
+| Onboarding status API | Pass | `GET /users/me/onboarding-status` after season create |
+
+Spot-check in browser recommended after major onboarding changes: policy-editor tour auto-start, Help → restart tours, checklist progress sync.
+
+---
+
+## Implementation history
+
+Slices were implemented incrementally (one slice ≈ one PR). Suggested PR titles for reference:
 
 - `feat(onboarding): foundation — help menu, tour lib, video modal shell`
 - `feat(onboarding): student dashboard checklist`
@@ -385,6 +400,8 @@ App team only executes **slice 7** when URL is available; slices 1–6 do not bl
 - `feat(onboarding): Learn lesson 0 — enter the arena`
 - `feat(onboarding): intro video URL and first-login prompt`
 - `feat(onboarding): empty states and first-results debrief`
+
+For the parallel Wave 1 execution guide (mix parity, tour gate, polish tracks), see [`docs/archive/onboarding-multitask.md`](archive/onboarding-multitask.md).
 
 ---
 

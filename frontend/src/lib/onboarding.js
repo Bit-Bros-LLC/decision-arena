@@ -1,14 +1,12 @@
 /** @typedef {'completed' | 'skipped'} TourStatus */
 
 export const TOUR_IDS = {
-  STUDENT_DASHBOARD: 'student-dashboard',
   POLICY_EDITOR: 'policy-editor',
   PROFESSOR_ROOM: 'professor-room',
   PROFESSOR_SEASON: 'professor-season',
 };
 
 export const TOUR_LABELS = {
-  [TOUR_IDS.STUDENT_DASHBOARD]: 'Dashboard checklist',
   [TOUR_IDS.POLICY_EDITOR]: 'Policy editor',
   [TOUR_IDS.PROFESSOR_ROOM]: 'Room management',
   [TOUR_IDS.PROFESSOR_SEASON]: 'Season setup',
