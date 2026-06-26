@@ -1,5 +1,5 @@
 # Decision Arena 
-
+ 
 A competitive inventory simulation game where students design operating policies, backtest them against historical data, and get scored on unseen actuals. Built as a companion tool for [The Decision Factory](https://a.co/d/0i9LPR5F) by Adam DeJans Jr. & John Brandon Elam.
 
 The public **landing page** (`/`) introduces the product; signed-in users use the **dashboard**, **onboarding** (checklist + guided tours), **rooms**, **seasons**, and **Learn** modules below.
