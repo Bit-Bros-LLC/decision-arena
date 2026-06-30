@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, setAuth } from '../api';
+import { trackEvent } from '../lib/analytics';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ export default function Login() {
               role,
             });
       setAuth(data);
+      trackEvent(mode === 'login' ? 'login_success' : 'registration_success', { role: data.role });
       navigate('/dashboard');
     } catch (err) {
       if (mode === 'login' && err.status === 401) {

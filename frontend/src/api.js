@@ -52,6 +52,7 @@ export const api = {
   login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   updateProfile: (body) => request('/auth/profile', { method: 'PUT', body: JSON.stringify(body) }),
   listUsers: () => request('/auth/users'),
+  getOnboardingStatus: () => request('/users/me/onboarding-status'),
   adminResetPassword: (body) => request('/auth/admin-reset-password', { method: 'POST', body: JSON.stringify(body) }),
 
   getRooms: () => request('/rooms'),
@@ -83,6 +84,8 @@ export const api = {
     request(`/leaderboard/room/${roomId}/template/${templateId}/cohort`),
 
   listSeasonPresets: () => request('/seasons/presets'),
+  listStoryPackages: () => request('/seasons/story-packages'),
+  previewStoryPackage: (storyId) => request(`/seasons/story-packages/${storyId}/preview`),
   previewSeason: (body) => request('/seasons/preview', { method: 'POST', body: JSON.stringify(body) }),
   listRoomSeasons: (roomId) => request(`/seasons/room/${roomId}`),
   listSandboxSeasons: () => request('/seasons/sandbox'),

@@ -38,6 +38,50 @@ input:focus, select:focus, textarea:focus {
   list-style-type: disc;
   padding-left: 1.5rem;
 }
+
+/* Driver.js — match Decision Arena dark theme */
+.driver-popover {
+  background-color: #1e293b !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #475569 !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45) !important;
+}
+
+.driver-popover-title {
+  color: #f8fafc !important;
+  font-size: 1rem !important;
+}
+
+.driver-popover-description {
+  color: #94a3b8 !important;
+}
+
+.driver-popover-progress-text {
+  color: #64748b !important;
+}
+
+.driver-popover-footer button {
+  border-radius: 0.5rem !important;
+  text-shadow: none !important;
+}
+
+.driver-popover-next-btn,
+.driver-popover-done-btn {
+  background-color: #f59e0b !important;
+  color: #0f172a !important;
+  border: none !important;
+}
+
+.driver-popover-prev-btn {
+  background-color: transparent !important;
+  color: #cbd5e1 !important;
+  border: 1px solid #475569 !important;
+}
+
+.driver-popover-close-btn {
+  color: #94a3b8 !important;
+}
 .prose-custom li {
   margin-bottom: 0.25rem;
 }

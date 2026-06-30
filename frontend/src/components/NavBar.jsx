@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { getUser, logout } from '../api';
+import HelpMenu from './HelpMenu';
 
 export default function NavBar() {
   const user = getUser();
@@ -29,16 +30,13 @@ export default function NavBar() {
         </button>
         <button
           onClick={() => navigate('/learn')}
-          className={`text-sm font-medium transition-colors flex items-center gap-1.5 ${
+          className={`text-sm font-medium transition-colors ${
             location.pathname.startsWith('/learn')
               ? 'text-amber-400'
               : 'text-slate-400 hover:text-amber-300'
           }`}
         >
           Learn
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-semibold leading-none">
-            BETA
-          </span>
         </button>
         <button
           onClick={() => navigate('/solo-seasons')}
@@ -50,17 +48,11 @@ export default function NavBar() {
         >
           Solo-Seasons
         </button>
-        {location.pathname !== '/dashboard' && !location.pathname.startsWith('/learn') && (
-          <button
-            onClick={() => navigate(-1)}
-            className="text-sm text-slate-400 hover:text-slate-200 transition-colors"
-          >
-            &larr; Back
-          </button>
-        )}
       </div>
 
       <div className="flex items-center gap-5">
+        <HelpMenu />
+
         <span className="text-slate-400 text-sm hidden sm:block">
           {dateStr} &middot; {timeStr}
         </span>

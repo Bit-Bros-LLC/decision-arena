@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api, getUser } from '../api';
+import { FieldLabel } from '../components/FieldLabel';
+import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import { useOnboarding } from '../context/OnboardingContext';
+import { isTourDone, TOUR_IDS } from '../lib/onboarding';
+import { buildProfessorRoomTourSteps } from '../lib/professorRoomTour';
+import { runOnboardingTour } from '../lib/runOnboardingTour';
+import { SEASON_SPRINT_COPY } from '../lib/seasonSprintCopy';
 
 export default function RoomView() {
   const { roomId } = useParams();
@@ -19,9 +26,27 @@ export default function RoomView() {
   const [showEndClassConfirm, setShowEndClassConfirm] = useState(false);
   const [endingClass, setEndingClass] = useState(false);
   const [soloTemplates, setSoloTemplates] = useState([]);
-  const [templateName, setTemplateName] = useState('Class Season Sprint');
+  const [templateName, setTemplateName] = useState('');
   const [templateMode, setTemplateMode] = useState('random_mix');
   const [templateError, setTemplateError] = useState('');
+
+  const { userId, userRole, tourRevision } = useOnboarding();
+  const tourStartedRef = useRef(false);
+
+  useBreadcrumbLabels({ labels: room?.name ? { room: room.name } : {} });
+
+  const adhocRounds = useMemo(
+    () => rounds.filter((r) => !r.season_id),
+    [rounds],
+  );
+  const draftRound = useMemo(
+    () => adhocRounds.find((r) => r.status === 'draft') ?? null,
+    [adhocRounds],
+  );
+  const activeAdhocRound = useMemo(
+    () => adhocRounds.find((r) => r.status === 'active') ?? null,
+    [adhocRounds],
+  );
 
   const load = useCallback(async () => {
     setError(null);
@@ -52,6 +77,70 @@ export default function RoomView() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    tourStartedRef.current = false;
+  }, [roomId, tourRevision]);
+
+  useEffect(() => {
+    if (!userId || !isProfessor || loading || !room) return;
+    if (room.professor_id !== user?.user_id) return;
+    if (isTourDone(userId, TOUR_IDS.PROFESSOR_ROOM)) return;
+    if (tourStartedRef.current) return;
+
+    const hasInviteCode = Boolean(room.invite_code);
+    const steps = buildProfessorRoomTourSteps({
+      hasInviteCode,
+      hasDraftRound: Boolean(draftRound),
+      hasActiveRound: Boolean(activeAdhocRound),
+    });
+
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 15;
+
+    function tryStartTour() {
+      if (cancelled || tourStartedRef.current) return;
+
+      const missing = steps.some((step) => !document.querySelector(step.element));
+      if (missing) {
+        if (attempt < maxAttempts) {
+          attempt += 1;
+          setTimeout(tryStartTour, 100);
+        }
+        return;
+      }
+
+      const firstElement = document.querySelector(steps[0].element);
+      firstElement?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+
+      tourStartedRef.current = true;
+      runOnboardingTour({
+        userId,
+        userRole,
+        tourId: TOUR_IDS.PROFESSOR_ROOM,
+        steps,
+      });
+    }
+
+    const frameId = requestAnimationFrame(tryStartTour);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [
+    userId,
+    userRole,
+    tourRevision,
+    roomId,
+    isProfessor,
+    loading,
+    room,
+    draftRound,
+    activeAdhocRound,
+    user?.user_id,
+  ]);
 
   const copyInvite = async () => {
     if (!room?.invite_code) return;
@@ -115,10 +204,15 @@ export default function RoomView() {
   };
 
   const handleCreateTemplate = async () => {
+    const trimmedName = templateName.trim();
+    if (!trimmedName) {
+      setTemplateError('Please enter a template name');
+      return;
+    }
     setTemplateError('');
     try {
       await api.createRoomSoloTemplate(roomId, {
-        name: templateName,
+        name: trimmedName,
         season_mode: templateMode,
         total_rounds: 5,
         contract_updates_allowed: 1,
@@ -133,8 +227,9 @@ export default function RoomView() {
           ordering_fixed: 20,
           per_unit_cost: 5,
           selling_price: 15,
-          insurance_premium: 8,
-          insurance_coverage_pct: 0.8,
+          dual_source_enabled: false,
+          dual_source_premium_per_unit: 2,
+          dual_source_rescue_pct: 1,
         },
         starting_inventory: 100,
         is_published: true,
@@ -213,7 +308,7 @@ export default function RoomView() {
         </div>
       )}
 
-      <div>
+      <div data-tour="room-header">
         <h1 className="text-2xl font-semibold tracking-tight text-slate-100 md:text-3xl">
           {room.name}
         </h1>
@@ -237,7 +332,10 @@ export default function RoomView() {
         )}
 
         {isProfessor && room.invite_code && (
-          <div className="mb-8 rounded-xl border border-amber-500/30 bg-slate-800 p-5 shadow-lg">
+          <div
+            data-tour="room-invite"
+            className="mb-8 rounded-xl border border-amber-500/30 bg-slate-800 p-5 shadow-lg"
+          >
             <h2 className="text-sm font-medium uppercase tracking-wide text-amber-500">
               Invite code
             </h2>
@@ -256,21 +354,13 @@ export default function RoomView() {
           </div>
         )}
 
-        <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div data-tour="room-create" className="mb-6 flex flex-wrap items-center gap-3">
           {isProfessor && !roomComplete && (
             <Link
               to={`/room/${roomId}/create-season`}
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400"
             >
               Create Season
-            </Link>
-          )}
-          {isProfessor && !roomComplete && (
-            <Link
-              to={`/room/${roomId}/create-round`}
-              className="rounded-lg border border-amber-500/40 px-4 py-2 text-sm text-amber-500 transition hover:bg-amber-500/10"
-            >
-              Create Round
             </Link>
           )}
           <Link
@@ -293,9 +383,14 @@ export default function RoomView() {
           )}
         </div>
 
-        {seasons.length > 0 && (
-          <div className="mb-8">
+        {isProfessor && (
+          <div data-tour="room-activate" className="mb-8">
             <h2 className="mb-4 text-lg font-medium text-slate-100">Seasons</h2>
+            {seasons.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 p-6 text-center text-sm text-slate-400">
+                No seasons yet. Create one to run a multi-round class competition.
+              </p>
+            ) : (
             <ul className="space-y-3">
               {seasons.map((s) => {
                 const scored = s.rounds.filter((r) => r.status === 'scored').length;
@@ -357,6 +452,7 @@ export default function RoomView() {
                 );
               })}
             </ul>
+            )}
           </div>
         )}
 
@@ -364,15 +460,38 @@ export default function RoomView() {
           <h2 className="text-lg font-medium text-slate-100">Season Sprint templates</h2>
           <p className="text-xs text-slate-500">Professor can publish shared templates. Students run them asynchronously on their own copies.</p>
           {isProfessor && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <input value={templateName} onChange={(e) => setTemplateName(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm" />
-              <select value={templateMode} onChange={(e) => setTemplateMode(e.target.value)} className="rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm">
-                <option value="random_mix">Random mix</option>
-                <option value="custom_mix">Custom mix</option>
-              </select>
-              <button type="button" onClick={handleCreateTemplate} className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900">
-                Publish template
-              </button>
+            <div className="mt-3 space-y-2">
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="min-w-[12rem] flex-1">
+                  <FieldLabel label="Template name" help={SEASON_SPRINT_COPY.templateName} />
+                  <input
+                    type="text"
+                    value={templateName}
+                    onChange={(e) => setTemplateName(e.target.value)}
+                    placeholder={SEASON_SPRINT_COPY.templateNamePlaceholder}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="min-w-[10rem]">
+                  <FieldLabel label="Mode" help={SEASON_SPRINT_COPY.templateMode} />
+                  <select
+                    value={templateMode}
+                    onChange={(e) => setTemplateMode(e.target.value)}
+                    className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-1.5 text-sm text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="random_mix">Random mix</option>
+                    <option value="custom_mix">Custom mix</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCreateTemplate}
+                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-400"
+                >
+                  Publish template
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">{SEASON_SPRINT_COPY.templateHelper}</p>
             </div>
           )}
           {templateError && <p className="mt-2 text-sm text-red-400">{templateError}</p>}
@@ -401,8 +520,9 @@ export default function RoomView() {
           </div>
         </div>
 
+        <div data-tour="room-score">
         <h2 className="mb-4 text-lg font-medium text-slate-100">Rounds</h2>
-        {rounds.filter((r) => !r.season_id).length === 0 ? (
+        {adhocRounds.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 p-8 text-center text-slate-400">
             {seasons.length > 0
               ? 'No ad-hoc rounds. Open a season above to see its rounds.'
@@ -410,7 +530,7 @@ export default function RoomView() {
           </p>
         ) : (
           <ul className="space-y-4">
-            {rounds.filter((r) => !r.season_id).map((r) => {
+            {adhocRounds.map((r) => {
               const statusColor =
                 r.status === 'draft'
                   ? 'text-slate-400'
@@ -453,6 +573,7 @@ export default function RoomView() {
                             type="button"
                             disabled={activatingId === r.id}
                             onClick={() => handleActivateRound(r.id)}
+                            data-tour={draftRound?.id === r.id ? 'room-activate-btn' : undefined}
                             className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 transition hover:bg-amber-400 disabled:opacity-50"
                           >
                             {activatingId === r.id ? 'Activating…' : 'Activate'}
@@ -481,6 +602,7 @@ export default function RoomView() {
                                 type="button"
                                 disabled={scoringId === r.id}
                                 onClick={() => handleScoreRound(r.id)}
+                                data-tour={activeAdhocRound?.id === r.id ? 'room-score-btn' : undefined}
                                 className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
                               >
                                 {scoringId === r.id ? 'Scoring…' : 'Score Round'}
@@ -530,6 +652,7 @@ export default function RoomView() {
             })}
           </ul>
         )}
+        </div>
     </div>
   );
 }

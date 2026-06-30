@@ -32,6 +32,11 @@ from simulation.season_scenarios import (
     list_presets,
     slice_round_data,
 )
+from simulation.story_packages import (
+    build_story_timeline,
+    get_story_package,
+    list_story_packages,
+)
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -58,6 +63,7 @@ class CreateSeasonRequest(BaseModel):
     season_scope: str = "room"
     source_template_id: Optional[str] = None
     seed: Optional[int] = None
+    story_package_id: Optional[str] = None
 
 
 class PreviewSeasonRequest(BaseModel):
@@ -112,6 +118,9 @@ class SeasonResponse(BaseModel):
     historical_leadin_days: int
     season_mode: str
     mix_config: dict
+    story_package_id: str | None = None
+    narrative: str | None = None
+    news: list[dict] = []
     status: str
     rounds: list[RoundSummary]
 
@@ -210,6 +219,9 @@ def _season_to_response(season: SeasonRow, rounds: list[RoundRow]) -> dict:
         "historical_leadin_days": season.historical_leadin_days,
         "season_mode": season.season_mode,
         "mix_config": season.mix_config or {},
+        "story_package_id": season.story_package_id,
+        "narrative": season.narrative,
+        "news": season.news or [],
         "status": season.status,
         "rounds": [
             {
@@ -250,6 +262,33 @@ def _get_or_create_member_state(
 @router.get("/presets")
 def get_presets(_: UserRow = Depends(get_current_user)):
     return list_presets()
+
+
+@router.get("/story-packages")
+def get_story_packages(_: UserRow = Depends(get_current_user)):
+    """List authored narrative story packages (metadata, narrative, news)."""
+    return list_story_packages()
+
+
+@router.get("/story-packages/{story_id}/preview")
+def preview_story_package(
+    story_id: str,
+    _: UserRow = Depends(get_current_user),
+):
+    """Return a story's frozen demand timeline so the chart can be previewed."""
+    pkg = get_story_package(story_id)
+    if not pkg:
+        raise HTTPException(404, "Story package not found")
+    plan = build_story_timeline(story_id)
+    total_rounds = pkg["total_rounds"]
+    round_duration = pkg["round_duration_days"]
+    return {
+        "leadin": plan["leadin"],
+        "timeline": plan["timeline"],
+        "round_boundaries": [
+            i * round_duration + 1 for i in range(1, total_rounds)
+        ],
+    }
 
 
 @router.post("/preview")
@@ -317,6 +356,26 @@ def create_season(
     if scope == "sandbox":
         room = _get_or_create_private_sandbox_room(db, user)
         body.room_id = room.id
+
+    # A story package pre-selects every mechanical setting (rounds, contract
+    # updates, duration, lead-in, inventory, costs) and ships a frozen timeline
+    # plus narrative + news. Professor-provided values are overridden by the
+    # package so the authored story stays coherent.
+    story_pkg = None
+    if body.story_package_id:
+        story_pkg = get_story_package(body.story_package_id)
+        if not story_pkg:
+            raise HTTPException(404, "Story package not found")
+        body.total_rounds = story_pkg["total_rounds"]
+        body.round_duration_days = story_pkg["round_duration_days"]
+        body.historical_leadin_days = story_pkg["historical_leadin_days"]
+        body.contract_updates_allowed = story_pkg["contract_updates_allowed"]
+        body.starting_inventory = story_pkg["starting_inventory"]
+        body.costs = dict(story_pkg["costs"])
+        body.season_mode = "single"
+        body.mix_config = {}
+        body.scenario_config = {}
+
     if body.total_rounds < 1:
         raise HTTPException(400, "total_rounds must be >= 1")
     if body.contract_updates_allowed < 0:
@@ -344,20 +403,24 @@ def create_season(
         else:
             raise HTTPException(400, "first_round_deadline must be ISO datetime")
 
-    # Generate the season timeline.
-    try:
-        plan = generate_mixed_season(
-            season_mode=body.season_mode,
-            total_rounds=body.total_rounds,
-            round_duration_days=body.round_duration_days,
-            leadin_days=body.historical_leadin_days,
-            scenario_preset=body.scenario_preset,
-            scenario_config=body.scenario_config or {},
-            mix_config=body.mix_config or {},
-            seed=body.seed,
-        )
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(400, str(exc))
+    # Generate the season timeline. Story packages use a frozen, hand-authored
+    # timeline; everything else uses the algorithmic generator.
+    if story_pkg is not None:
+        plan = build_story_timeline(body.story_package_id)
+    else:
+        try:
+            plan = generate_mixed_season(
+                season_mode=body.season_mode,
+                total_rounds=body.total_rounds,
+                round_duration_days=body.round_duration_days,
+                leadin_days=body.historical_leadin_days,
+                scenario_preset=body.scenario_preset,
+                scenario_config=body.scenario_config or {},
+                mix_config=body.mix_config or {},
+                seed=body.seed,
+            )
+        except (ValueError, TypeError) as exc:
+            raise HTTPException(400, str(exc))
 
     season = SeasonRow(
         room_id=body.room_id,
@@ -375,6 +438,9 @@ def create_season(
         starting_inventory=body.starting_inventory,
         round_duration_days=body.round_duration_days,
         historical_leadin_days=body.historical_leadin_days,
+        story_package_id=body.story_package_id,
+        narrative=story_pkg["narrative"] if story_pkg else None,
+        news=story_pkg["news"] if story_pkg else [],
         status="draft",
     )
     db.add(season)
@@ -859,7 +925,7 @@ def _score_round_in_place(rnd: RoundRow, db: Session) -> int:
                 total_profit=result.total_profit,
                 service_level=result.service_level,
                 stockout_days=result.stockout_days,
-                insurance_spend=result.insurance_spend,
+                dual_source_spend=result.dual_source_spend,
                 black_swan_hits=result.black_swan_hits,
                 black_swan_total_cost=result.black_swan_total_cost,
                 daily_log=[d.to_dict() for d in result.daily_log],

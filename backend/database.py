@@ -115,6 +115,10 @@ class SeasonRow(Base):
     starting_inventory = Column(Integer, nullable=False, default=100)
     round_duration_days = Column(Integer, nullable=False, default=30)
     historical_leadin_days = Column(Integer, nullable=False, default=60)
+    # When a season was instantiated from an authored narrative story package.
+    story_package_id = Column(String, nullable=True)
+    narrative = Column(Text, nullable=True)
+    news = Column(JsonColumn, nullable=False, default=list)
     status = Column(String, nullable=False, default="draft")  # "draft" | "active" | "completed"
     created_at = Column(DateTime, default=_now)
 
@@ -271,6 +275,7 @@ class ResultRow(Base):
     service_level = Column(Float, nullable=False)
     stockout_days = Column(Integer, nullable=False)
     insurance_spend = Column(Float, nullable=False, default=0)
+    dual_source_spend = Column(Float, nullable=False, default=0)
     black_swan_hits = Column(Integer, nullable=False, default=0)
     black_swan_total_cost = Column(Float, nullable=False, default=0)
     daily_log = Column(JsonColumn, nullable=False)
@@ -353,6 +358,15 @@ def _migrate_schema():
                 alters.append("ALTER TABLE seasons ADD COLUMN mix_config JSON NOT NULL DEFAULT '{}'")
             else:
                 alters.append("ALTER TABLE seasons ADD COLUMN mix_config JSONB NOT NULL DEFAULT '{}'::jsonb")
+        if "story_package_id" not in season_cols:
+            alters.append("ALTER TABLE seasons ADD COLUMN story_package_id VARCHAR")
+        if "narrative" not in season_cols:
+            alters.append("ALTER TABLE seasons ADD COLUMN narrative TEXT")
+        if "news" not in season_cols:
+            if is_sqlite:
+                alters.append("ALTER TABLE seasons ADD COLUMN news JSON NOT NULL DEFAULT '[]'")
+            else:
+                alters.append("ALTER TABLE seasons ADD COLUMN news JSONB NOT NULL DEFAULT '[]'::jsonb")
         if alters:
             with engine.begin() as conn:
                 for stmt in alters:
@@ -402,6 +416,26 @@ def _migrate_schema():
                 conn.execute(
                     text("UPDATE room_solo_templates SET scenario_seed = 42 WHERE scenario_seed IS NULL")
                 )
+
+    if insp.has_table("results"):
+        insp = inspect(engine)
+        result_cols = {c["name"] for c in insp.get_columns("results")}
+        if "dual_source_spend" not in result_cols:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE results ADD COLUMN dual_source_spend FLOAT NOT NULL DEFAULT 0"
+                    )
+                )
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE results SET dual_source_spend = insurance_spend "
+                        "WHERE dual_source_spend = 0 AND insurance_spend != 0"
+                    )
+                )
+
+    if insp.has_table("room_solo_templates"):
         return
     with engine.begin() as conn:
         if is_sqlite:
