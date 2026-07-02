@@ -35,8 +35,8 @@ export function validateSeasonModeConfig(seasonMode, scenarioPreset, allowedPres
   }
   if (seasonMode === 'custom_mix') {
     const rounds = Number(totalRounds);
-    if (!Number.isFinite(rounds) || rounds < 1) return 'Total rounds must be at least 1.';
-    if (customRoundPresets.length !== rounds) return 'Assign a demand pattern to every round.';
+    if (!Number.isFinite(rounds) || rounds < 1) return 'Total months must be at least 1.';
+    if (customRoundPresets.length !== rounds) return 'Assign a demand pattern to every month.';
     return null;
   }
   return null;

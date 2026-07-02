@@ -82,7 +82,7 @@ export default function DashboardChecklist({ rooms = [], soloSeasons = [], isPro
             }}
             className="text-sm text-amber-400 hover:text-amber-300"
           >
-            Create solo season
+            Create practice run
           </button>
         );
       case 'join_room':
@@ -93,7 +93,7 @@ export default function DashboardChecklist({ rooms = [], soloSeasons = [], isPro
               onClick={() => scrollToId('join-room')}
               className="text-sm text-amber-400 hover:text-amber-300"
             >
-              Join a room
+              Join a classroom
             </button>
             <button
               type="button"
@@ -112,7 +112,7 @@ export default function DashboardChecklist({ rooms = [], soloSeasons = [], isPro
               onClick={() => navigate(`/round/${activeSoloRoundId}`)}
               className="text-sm text-amber-400 hover:text-amber-300"
             >
-              Open active round
+              Open active month
             </button>
           );
         }
@@ -124,12 +124,12 @@ export default function DashboardChecklist({ rooms = [], soloSeasons = [], isPro
               onClick={() => navigate(path)}
               className="text-sm text-amber-400 hover:text-amber-300"
             >
-              Open your solo season
+              Open your practice run
             </button>
           ) : null;
         }
         return (
-          <span className="text-sm text-slate-500">Start a solo season first</span>
+          <span className="text-sm text-slate-500">Start a practice run first</span>
         );
       case 'create_room':
         return (
@@ -138,7 +138,7 @@ export default function DashboardChecklist({ rooms = [], soloSeasons = [], isPro
             onClick={() => scrollToId('create-room')}
             className="text-sm text-amber-400 hover:text-amber-300"
           >
-            Create a room
+            Create a classroom
           </button>
         );
       case 'create_season':
@@ -149,7 +149,7 @@ export default function DashboardChecklist({ rooms = [], soloSeasons = [], isPro
               onClick={() => navigate(`/room/${firstRoomId}/create-season`)}
               className="text-sm text-amber-400 hover:text-amber-300"
             >
-              Set up a season
+              Set up a fiscal year
             </button>
           );
         }
@@ -191,7 +191,7 @@ export default function DashboardChecklist({ rooms = [], soloSeasons = [], isPro
           <h2 className="text-lg font-medium text-slate-100">Getting started</h2>
           <p className="mt-1 text-sm text-slate-400">
             {isProfessor
-              ? 'Set up your classroom and first season.'
+              ? 'Set up your classroom and first fiscal year.'
               : 'Complete these steps to practice on your own or join a class.'}
           </p>
         </div>

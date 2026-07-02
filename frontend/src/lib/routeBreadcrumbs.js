@@ -24,69 +24,69 @@ const ROUTE_CRUMBS = [
     pattern: '/leaderboard/room/:roomId/template/:templateId/cohort',
     build: (p) => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Room', `/room/${p.roomId}`, 'room'),
-      crumb('Cohort leaderboard', null, 'leaderboardLeaf'),
+      crumb('Classroom', `/room/${p.roomId}`, 'room'),
+      crumb('Case study cohort', null, 'leaderboardLeaf'),
     ],
   },
   {
     pattern: '/leaderboard/season/:seasonId',
     build: () => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Season leaderboard', null, 'leaderboardLeaf'),
+      crumb('Fiscal year leaderboard', null, 'leaderboardLeaf'),
     ],
   },
   {
     pattern: '/leaderboard/:roundId',
     build: () => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Round leaderboard', null, 'leaderboardRound'),
+      crumb('Month leaderboard', null, 'leaderboardRound'),
     ],
   },
   {
     pattern: '/room/:roomId/edit-round/:roundId',
     build: (p) => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Room', `/room/${p.roomId}`, 'room'),
-      crumb('Edit round', null),
+      crumb('Classroom', `/room/${p.roomId}`, 'room'),
+      crumb('Edit month', null),
     ],
   },
   {
     pattern: '/room/:roomId/season/:seasonId',
     build: (p) => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Room', `/room/${p.roomId}`, 'room'),
-      crumb('Season', null, 'season'),
+      crumb('Classroom', `/room/${p.roomId}`, 'room'),
+      crumb('Fiscal year', null, 'season'),
     ],
   },
   {
     pattern: '/room/:roomId/season-sprint/new',
     build: (p) => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Room', `/room/${p.roomId}`, 'room'),
-      crumb('New season sprint', null),
+      crumb('Classroom', `/room/${p.roomId}`, 'room'),
+      crumb('New case study', null),
     ],
   },
   {
     pattern: '/room/:roomId/create-round',
     build: (p) => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Room', `/room/${p.roomId}`, 'room'),
-      crumb('Create round', null),
+      crumb('Classroom', `/room/${p.roomId}`, 'room'),
+      crumb('Create month', null),
     ],
   },
   {
     pattern: '/room/:roomId/create-season',
     build: (p) => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Room', `/room/${p.roomId}`, 'room'),
-      crumb('Create season', null),
+      crumb('Classroom', `/room/${p.roomId}`, 'room'),
+      crumb('Create fiscal year', null),
     ],
   },
   {
     pattern: '/room/:roomId',
     build: () => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Room', null, 'room'),
+      crumb('Classroom', null, 'room'),
     ],
   },
   {
@@ -106,13 +106,13 @@ const ROUTE_CRUMBS = [
   },
   {
     pattern: '/season-sprint/new',
-    build: () => [crumb('Dashboard', '/dashboard'), crumb('New season sprint', null)],
+    build: () => [crumb('Dashboard', '/dashboard'), crumb('New practice run', null)],
   },
   {
     pattern: '/season-sprint/:seasonId',
     build: () => [
       crumb('Dashboard', '/dashboard'),
-      crumb('Season', null, 'season'),
+      crumb('Practice run', null, 'season'),
     ],
   },
   {
@@ -133,7 +133,7 @@ const ROUTE_CRUMBS = [
   },
   {
     pattern: '/solo-seasons',
-    build: () => [crumb('Dashboard', '/dashboard'), crumb('Solo seasons', null)],
+    build: () => [crumb('Dashboard', '/dashboard'), crumb('Practice runs', null)],
   },
   {
     pattern: '/account',

@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, getUser, updateCachedUser } from '../api';
+import { useAnalyticsConsent } from '../context/AnalyticsConsentContext';
 
 export default function AccountSettings() {
   const user = getUser();
+  const { consent, acceptAnalytics, declineAnalytics } = useAnalyticsConsent();
 
   const [displayName, setDisplayName] = useState(user?.display_name || '');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -235,12 +238,59 @@ export default function AccountSettings() {
         </form>
       </section>
 
+      {/* ---- Privacy & Analytics ---- */}
+      <section className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg">
+        <h2 className="text-lg font-medium text-slate-100">Privacy &amp; Analytics</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          We use Google Analytics to improve Decision Arena. Data is not used for advertising and
+          we never sell your data.{' '}
+          <Link to="/privacy" className="text-amber-400 underline hover:text-amber-300">
+            Read our privacy policy
+          </Link>
+          .
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <span className="text-sm text-slate-300">
+            Analytics:{' '}
+            <span
+              className={`font-medium ${
+                consent === 'granted'
+                  ? 'text-emerald-400'
+                  : consent === 'denied'
+                    ? 'text-slate-400'
+                    : 'text-amber-400'
+              }`}
+            >
+              {consent === 'granted' ? 'Enabled' : consent === 'denied' ? 'Disabled' : 'Not set'}
+            </span>
+          </span>
+          {consent !== 'granted' && (
+            <button
+              type="button"
+              onClick={acceptAnalytics}
+              className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-900 transition hover:bg-amber-400"
+            >
+              Enable analytics
+            </button>
+          )}
+          {consent !== 'denied' && (
+            <button
+              type="button"
+              onClick={declineAnalytics}
+              className="rounded-lg border border-slate-600 px-4 py-2 text-sm font-medium text-slate-300 transition hover:border-slate-500 hover:text-slate-100"
+            >
+              Disable analytics
+            </button>
+          )}
+        </div>
+      </section>
+
       {/* ---- Professor: Reset Student Password ---- */}
       {isProfessor && (
         <section className="rounded-xl border border-amber-500/30 bg-slate-800 p-6 shadow-lg">
           <h2 className="text-lg font-medium text-amber-400">Reset Student Password</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Reset the password for any student in your rooms who got locked out.
+            Reset the password for any student in your classrooms who got locked out.
           </p>
 
           {!usersLoaded ? (

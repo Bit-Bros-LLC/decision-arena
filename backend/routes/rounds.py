@@ -55,9 +55,9 @@ def create_round(
 ):
     room = db.query(RoomRow).filter(RoomRow.id == body.room_id).first()
     if not room or room.professor_id != user.id:
-        raise HTTPException(403, "Not your room")
+        raise HTTPException(403, "Not your classroom")
     if room.completed:
-        raise HTTPException(400, "This class is completed; no more rounds can be created")
+        raise HTTPException(400, "This class is completed; no more months can be created")
 
     existing_count = db.query(RoundRow).filter(RoundRow.room_id == body.room_id).count()
     deadline_dt = datetime.fromisoformat(body.deadline)
@@ -88,11 +88,11 @@ def update_round(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
-        raise HTTPException(403, "Not your room")
+        raise HTTPException(403, "Not your classroom")
 
     if rnd.status != "draft":
         raise HTTPException(400, "Only draft rounds can be edited")
@@ -121,7 +121,7 @@ def get_round(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
 
     is_professor = False
     if rnd.room_id:
@@ -153,7 +153,7 @@ def list_rounds(
         .first()
     )
     if not member:
-        raise HTTPException(403, "Not a member of this room")
+        raise HTTPException(403, "Not a member of this classroom")
 
     rounds = (
         db.query(RoundRow)
@@ -185,21 +185,21 @@ def activate_round(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
-        raise HTTPException(403, "Not your room")
+        raise HTTPException(403, "Not your classroom")
 
     if room.completed:
         raise HTTPException(400, "This class is completed")
 
     if rnd.status != "draft":
-        raise HTTPException(400, f"Round is already {rnd.status}")
+        raise HTTPException(400, f"Month is already {rnd.status}")
 
     rnd.status = "active"
     db.commit()
-    return {"message": "Round activated"}
+    return {"message": "Month activated"}
 
 
 @router.delete("/{round_id}")
@@ -210,18 +210,18 @@ def delete_round(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
-        raise HTTPException(403, "Not your room")
+        raise HTTPException(403, "Not your classroom")
 
     db.query(ResultRow).filter(ResultRow.round_id == round_id).delete()
     db.query(PolicyRow).filter(PolicyRow.round_id == round_id).delete()
     db.delete(rnd)
     db.commit()
 
-    return {"message": "Round deleted"}
+    return {"message": "Month deleted"}
 
 
 @router.post("/{round_id}/score")
@@ -232,14 +232,14 @@ def score_round(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
-        raise HTTPException(403, "Not your room")
+        raise HTTPException(403, "Not your classroom")
 
     if rnd.status == "scored":
-        raise HTTPException(400, "Round already scored")
+        raise HTTPException(400, "Month already scored")
 
     # Get all submitted policies for this round
     policies = db.query(PolicyRow).filter(PolicyRow.round_id == round_id).all()
@@ -293,7 +293,7 @@ def score_round(
     rnd.status = "scored"
     db.commit()
 
-    return {"message": f"Round scored. {len(scored)} policies evaluated.", "scored_count": len(scored)}
+    return {"message": f"Month scored. {len(scored)} policies evaluated.", "scored_count": len(scored)}
 
 
 def _round_response(rnd: RoundRow, reveal_actuals: bool) -> dict:

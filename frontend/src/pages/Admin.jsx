@@ -42,7 +42,7 @@ const SCENARIO_PRESETS = [
   {
     id: 'steady',
     name: 'Steady State',
-    description: 'Flat demand (~80/day) with mild noise. Good baseline round — tests basic inventory policy tuning.',
+    description: 'Flat demand (~80/day) with mild noise. Good baseline month — tests basic inventory policy tuning.',
     badge: 'Easy',
     badgeColor: 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10',
     generate() {
@@ -264,7 +264,7 @@ export default function Admin() {
         setHistoricalJson(JSON.stringify(rnd.historical_data ?? [], null, 2));
         setActualJson(JSON.stringify(rnd.actual_data ?? [], null, 2));
       } catch (err) {
-        if (!cancelled) setSubmitError(err.message || 'Failed to load round');
+        if (!cancelled) setSubmitError(err.message || 'Failed to load month');
       } finally {
         if (!cancelled) setLoadingRound(false);
       }
@@ -396,7 +396,7 @@ export default function Admin() {
       }
       navigate(`/room/${roomId}`);
     } catch (err) {
-      setSubmitError(err.message || (isEdit ? 'Failed to update round' : 'Failed to create round'));
+      setSubmitError(err.message || (isEdit ? 'Failed to update month' : 'Failed to create month'));
     } finally {
       setSubmitting(false);
     }
@@ -405,7 +405,7 @@ export default function Admin() {
   if (loadingRound) {
     return (
       <div className="p-6">
-        <p className="text-amber-500">Loading round…</p>
+        <p className="text-amber-500">Loading month…</p>
       </div>
     );
   }
@@ -414,10 +414,10 @@ export default function Admin() {
     <div className="space-y-8 max-w-3xl">
         <div>
           <h1 className="text-2xl font-semibold text-slate-100">
-            {isEdit ? 'Edit round' : 'Create round'}
+            {isEdit ? 'Edit month' : 'Create month'}
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            Room:{' '}
+            Classroom:{' '}
             <span className="text-slate-200">{roomLabel ?? '…'}</span>
           </p>
         </div>
@@ -646,7 +646,7 @@ export default function Admin() {
             >
               {submitting
                 ? (isEdit ? 'Saving…' : 'Creating…')
-                : (isEdit ? 'Save changes' : 'Create round')}
+                : (isEdit ? 'Save changes' : 'Create month')}
             </button>
             <button
               type="button"

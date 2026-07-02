@@ -30,7 +30,7 @@ export function buildPolicyEditorTourSteps({ dualSourceEnabled }) {
       element: '[data-tour="dual-sourcing"]',
       title: 'Dual sourcing',
       description:
-        'Optional second lever: single source vs dual source. Dual sourcing costs more per unit but helps orders survive supplier failures.',
+        'Choose single or dual source. Dual sourcing is supplier insurance — you pay extra per unit so your orders survive supplier failures.',
       side: 'bottom',
     });
   }

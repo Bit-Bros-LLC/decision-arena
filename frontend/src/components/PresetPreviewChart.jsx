@@ -56,7 +56,7 @@ export default function PresetPreviewChart({
             stroke="#94a3b8"
             strokeDasharray="4 4"
             label={{
-              value: 'Season starts',
+              value: 'Fiscal year starts',
               position: 'top',
               fill: '#94a3b8',
               fontSize: 11,
@@ -74,7 +74,7 @@ export default function PresetPreviewChart({
           <Line
             type="monotone"
             dataKey="demandActual"
-            name="Season demand"
+            name="Fiscal year demand"
             stroke="#38bdf8"
             strokeWidth={2}
             dot={false}

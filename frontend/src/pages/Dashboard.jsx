@@ -18,7 +18,6 @@ export default function Dashboard() {
   const [roomName, setRoomName] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
-  const [lastCreated, setLastCreated] = useState(null);
 
   const [joinRoomId, setJoinRoomId] = useState('');
   const [joinCode, setJoinCode] = useState('');
@@ -52,7 +51,7 @@ export default function Dashboard() {
         if (status.has_season) markChecklistItem('create_season');
       }
     } catch (err) {
-      setRoomsError(err.message || 'Failed to load rooms');
+      setRoomsError(err.message || 'Failed to load classrooms');
     } finally {
       setLoadingRooms(false);
     }
@@ -76,12 +75,11 @@ export default function Dashboard() {
       const room = await api.createRoom(roomName.trim());
       trackEvent('room_created', { user_role: user?.role ?? 'unknown' });
       markChecklistItem('create_room');
-      setLastCreated({ name: room.name });
       setRoomName('');
       setShowCreateForm(false);
-      await loadDashboardData();
+      navigate(`/room/${room.id}`);
     } catch (err) {
-      setCreateError(err.message || 'Could not create room');
+      setCreateError(err.message || 'Could not create classroom');
     } finally {
       setCreating(false);
     }
@@ -89,10 +87,16 @@ export default function Dashboard() {
 
   async function handleJoinRoom(e) {
     e.preventDefault();
+    const code = joinCode.trim();
+    if (!code) {
+      setJoinError('Invite code is required');
+      return;
+    }
     setJoinError('');
     setJoining(true);
     try {
-      const res = await api.joinRoom(joinRoomId.trim(), joinCode.trim());
+      const roomId = joinRoomId.trim() || null;
+      const res = await api.joinRoom(roomId, code);
       trackEvent('room_joined', { user_role: user?.role ?? 'unknown' });
       markChecklistItem('join_room');
       setJoinRoomId('');
@@ -100,7 +104,7 @@ export default function Dashboard() {
       await loadDashboardData();
       if (res.room_id) navigate(`/room/${res.room_id}`);
     } catch (err) {
-      setJoinError(err.message || 'Could not join room');
+      setJoinError(err.message || 'Could not join classroom');
     } finally {
       setJoining(false);
     }
@@ -115,23 +119,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-        {lastCreated && (
-          <div className="rounded-xl border-2 border-amber-500/60 bg-slate-800 p-6 shadow-lg">
-            <p className="text-sm font-medium text-amber-400">Room created</p>
-            <p className="mt-1 text-lg text-slate-200">{lastCreated.name}</p>
-            <p className="mt-3 text-sm text-slate-400">
-              Open the room to see the invite code and manage rounds.
-            </p>
-            <button
-              type="button"
-              onClick={() => setLastCreated(null)}
-              className="mt-4 text-sm text-slate-400 underline hover:text-slate-200"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
         <DashboardChecklist
           rooms={rooms}
           soloSeasons={soloSeasons}
@@ -142,7 +129,7 @@ export default function Dashboard() {
           <section className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-6">
             <h2 className="text-lg font-medium text-slate-100">Get your class started</h2>
             <p className="mt-2 text-sm text-slate-400">
-              You are not in any rooms yet. Create a classroom first, then set up a season and share
+              You are not in any classrooms yet. Create a classroom first, then set up a fiscal year and share
               the invite code with students.
             </p>
             <button
@@ -153,7 +140,7 @@ export default function Dashboard() {
               }}
               className="mt-4 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
             >
-              Create room
+              Create classroom
             </button>
           </section>
         )}
@@ -162,8 +149,8 @@ export default function Dashboard() {
           <section className="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-6">
             <h2 className="text-lg font-medium text-slate-100">Welcome — pick a path</h2>
             <p className="mt-2 text-sm text-slate-400">
-              Join your instructor&apos;s class with a room ID and invite code, or practice on your
-              own with a private solo season.
+              Join your instructor&apos;s class with an invite code, or practice on your
+              own with a private practice run.
             </p>
             <div className="mt-4 flex flex-wrap gap-3">
               <button
@@ -173,14 +160,14 @@ export default function Dashboard() {
                 }
                 className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-amber-400"
               >
-                Join room
+                Join classroom
               </button>
               <button
                 type="button"
                 onClick={goToSoloSeason}
                 className="rounded-lg border border-emerald-500/50 px-4 py-2 text-sm font-semibold text-emerald-400 hover:bg-emerald-500/10"
               >
-                Create solo season
+                Create practice run
               </button>
             </div>
           </section>
@@ -190,7 +177,7 @@ export default function Dashboard() {
           <section id="create-room" className="rounded-xl border border-slate-700 bg-slate-800 p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-medium text-slate-200">Create room</h2>
+                <h2 className="text-lg font-medium text-slate-200">Create classroom</h2>
                 {highlightCreateRoomCta && (
                   <p className="mt-1 text-sm text-amber-400/90">
                     Start here — create a classroom for your students.
@@ -207,7 +194,7 @@ export default function Dashboard() {
                   highlightCreateRoomCta ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-800' : ''
                 }`}
               >
-                {showCreateForm ? 'Cancel' : 'Create Room'}
+                {showCreateForm ? 'Cancel' : 'Create classroom'}
               </button>
             </div>
             {showCreateForm && (
@@ -220,7 +207,7 @@ export default function Dashboard() {
                 <input
                   type="text"
                   required
-                  placeholder="Room name"
+                  placeholder="Classroom name"
                   value={roomName}
                   onChange={(e) => setRoomName(e.target.value)}
                   className="w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 placeholder:text-slate-500 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 sm:max-w-md"
@@ -240,11 +227,11 @@ export default function Dashboard() {
         <section className="rounded-xl border border-slate-700 bg-slate-800 p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-medium text-slate-200">Private Solo Seasons</h2>
-              <p className="text-sm text-slate-400">Create a solo season not affiliated with any class.</p>
+              <h2 className="text-lg font-medium text-slate-200">Practice runs</h2>
+              <p className="text-sm text-slate-400">Create a practice run not affiliated with any class.</p>
               {highlightSoloCta && (
                 <p className="mt-1 text-sm text-emerald-400/90">
-                  New here? Start with a private solo season to practice.
+                  New here? Start with a private practice run to practice.
                 </p>
               )}
             </div>
@@ -255,15 +242,15 @@ export default function Dashboard() {
                 highlightSoloCta ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-800' : ''
               }`}
             >
-              Create Private Solo Season
+              Create practice run
             </button>
           </div>
         </section>
 
         <section id="join-room" className="rounded-xl border border-slate-700 bg-slate-800 p-6">
-          <h2 className="text-lg font-medium text-slate-200">Join room</h2>
+          <h2 className="text-lg font-medium text-slate-200">Join classroom</h2>
           <p className="mt-1 text-sm text-slate-400">
-            Enter the room ID and invite code from your instructor.
+            Enter the invite code from your instructor. Classroom ID is optional.
           </p>
           <form onSubmit={handleJoinRoom} className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
             {joinError && (
@@ -273,12 +260,11 @@ export default function Dashboard() {
             )}
             <div className="flex-1 min-w-[140px]">
               <label htmlFor="join-room-id" className="block text-xs text-slate-400">
-                Room ID
+                Classroom ID (optional)
               </label>
               <input
                 id="join-room-id"
                 type="text"
-                required
                 value={joinRoomId}
                 onChange={(e) => setJoinRoomId(e.target.value)}
                 className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
@@ -308,7 +294,7 @@ export default function Dashboard() {
         </section>
 
         <section>
-          <h2 className="text-lg font-medium text-slate-200">Your rooms</h2>
+          <h2 className="text-lg font-medium text-slate-200">Your classrooms</h2>
           {loadingRooms && <p className="mt-4 text-slate-400">Loading…</p>}
           {roomsError && (
             <p className="mt-4 text-sm text-red-400" role="alert">
@@ -316,7 +302,7 @@ export default function Dashboard() {
             </p>
           )}
           {!loadingRooms && !roomsError && rooms.length === 0 && (
-            <p className="mt-4 text-slate-400">You are not in any rooms yet.</p>
+            <p className="mt-4 text-slate-400">You are not in any classrooms yet.</p>
           )}
           <ul className="mt-4 space-y-3">
             {rooms.map((room) => (
@@ -338,7 +324,8 @@ export default function Dashboard() {
                       className={
                         room.round_display === 'Complete'
                           ? 'text-emerald-400'
-                          : room.round_display?.startsWith('Round ')
+                          : room.round_display?.startsWith('Month ') ||
+                              room.round_display?.startsWith('Round ')
                             ? 'text-amber-400'
                             : 'text-slate-300'
                       }

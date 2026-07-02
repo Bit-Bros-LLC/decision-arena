@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { FieldLabel } from '../components/FieldLabel';
 import SeasonModeConfigurator from '../components/SeasonModeConfigurator';
+import SeasonAdvancedSettings from '../components/SeasonAdvancedSettings';
+import DualSourceFields from '../components/DualSourceFields';
 import PresetPreviewModal from '../components/PresetPreviewModal';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
+import { useOnboarding } from '../context/OnboardingContext';
 import { SEASON_SPRINT_COPY } from '../lib/seasonSprintCopy';
-import { defaultConfigFor } from '../lib/presetPreview';
+import { defaultConfigFor, PRESET_CONFIG_FIELDS } from '../lib/presetPreview';
 import {
   buildMixConfig,
   defaultAllowedPresets,
@@ -14,6 +17,9 @@ import {
   validateSeasonModeConfig,
 } from '../lib/seasonMixConfig';
 import { loadPresetPreview } from '../hooks/usePresetPreview';
+import { isTourDone, TOUR_IDS } from '../lib/onboarding';
+import { buildSoloSprintTourSteps } from '../lib/soloSprintTour';
+import { runOnboardingTour } from '../lib/runOnboardingTour';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -33,18 +39,23 @@ export default function SeasonSprintBuilder() {
   const navigate = useNavigate();
   const { roomId } = useParams();
   const inRoom = Boolean(roomId);
+  const { userId, userRole, tourRevision } = useOnboarding();
+  const tourStartedRef = useRef(false);
+
   const [presets, setPresets] = useState([]);
+  const [presetsReady, setPresetsReady] = useState(false);
   const [name, setName] = useState('');
   const [seasonMode, setSeasonMode] = useState('random_mix');
   const [totalRounds, setTotalRounds] = useState(5);
   const [contractUpdates, setContractUpdates] = useState(1);
-  const [roundDuration] = useState(30);
-  const [leadinDays] = useState(60);
+  const [roundDuration, setRoundDuration] = useState(30);
+  const [leadinDays, setLeadinDays] = useState(60);
   const [scenarioPreset, setScenarioPreset] = useState('steady');
+  const [scenarioConfig, setScenarioConfig] = useState({});
   const [allowedPresets, setAllowedPresets] = useState([]);
   const [customRoundPresets, setCustomRoundPresets] = useState([]);
-  const [costs] = useState(DEFAULT_COSTS);
-  const [startingInventory] = useState(100);
+  const [costs, setCosts] = useState(DEFAULT_COSTS);
+  const [startingInventory, setStartingInventory] = useState(100);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [roomBreadcrumbName, setRoomBreadcrumbName] = useState(null);
@@ -82,12 +93,19 @@ export default function SeasonSprintBuilder() {
 
   useEffect(() => {
     (async () => {
-      const list = await api.listSeasonPresets();
-      setPresets(Array.isArray(list) ? list : []);
-      const first = list?.[0]?.id || 'steady';
-      setScenarioPreset(first);
-      setAllowedPresets(defaultAllowedPresets(list || []));
-    })().catch(() => setPresets([]));
+      try {
+        const list = await api.listSeasonPresets();
+        setPresets(Array.isArray(list) ? list : []);
+        const first = list?.[0]?.id || 'steady';
+        setScenarioPreset(first);
+        setScenarioConfig(defaultConfigFor(first));
+        setAllowedPresets(defaultAllowedPresets(list || []));
+      } catch {
+        setPresets([]);
+      } finally {
+        setPresetsReady(true);
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -98,10 +116,78 @@ export default function SeasonSprintBuilder() {
     });
   }, [totalRounds, scenarioPreset]);
 
+  useEffect(() => {
+    tourStartedRef.current = false;
+  }, [tourRevision]);
+
+  useEffect(() => {
+    if (!userId || !presetsReady) return;
+    if (isTourDone(userId, TOUR_IDS.SOLO_SPRINT)) return;
+    if (tourStartedRef.current) return;
+
+    const steps = buildSoloSprintTourSteps();
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 15;
+
+    function tryStartTour() {
+      if (cancelled || tourStartedRef.current) return;
+
+      const missing = steps.some((step) => !document.querySelector(step.element));
+      if (missing) {
+        if (attempt < maxAttempts) {
+          attempt += 1;
+          setTimeout(tryStartTour, 100);
+        }
+        return;
+      }
+
+      const firstElement = document.querySelector(steps[0].element);
+      firstElement?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+
+      tourStartedRef.current = true;
+      runOnboardingTour({
+        userId,
+        userRole,
+        tourId: TOUR_IDS.SOLO_SPRINT,
+        steps,
+      });
+    }
+
+    const frameId = requestAnimationFrame(tryStartTour);
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frameId);
+    };
+  }, [userId, userRole, tourRevision, presetsReady]);
+
   const mixConfig = useMemo(
     () => buildMixConfig(seasonMode, allowedPresets, customRoundPresets),
     [seasonMode, allowedPresets, customRoundPresets],
   );
+
+  const activePreset = useMemo(
+    () => presets.find((p) => p.id === scenarioPreset) || null,
+    [presets, scenarioPreset],
+  );
+
+  const updateCost = (key, raw) => {
+    if (key === 'dual_source_enabled') {
+      setCosts((c) => ({ ...c, dual_source_enabled: raw === true || raw === 'true' }));
+      return;
+    }
+    const num = parseFloat(raw);
+    setCosts((c) => ({ ...c, [key]: Number.isFinite(num) ? num : c[key] }));
+  };
+
+  const updateScenarioField = (key, raw) => {
+    const num = parseFloat(raw);
+    setScenarioConfig((cfg) => ({
+      ...cfg,
+      [key]: Number.isFinite(num) ? num : cfg[key],
+    }));
+  };
 
   const openCardPreview = async (preset) => {
     setCardModalPreset(preset);
@@ -139,6 +225,7 @@ export default function SeasonSprintBuilder() {
       return;
     }
     setScenarioPreset(preset.id);
+    setScenarioConfig(defaultConfigFor(preset.id));
   };
 
   const handleCustomRoundPresetChange = (idx, value) => {
@@ -148,7 +235,7 @@ export default function SeasonSprintBuilder() {
   const submit = async () => {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setError('Please enter a season name');
+      setError('Please enter a practice run name');
       return;
     }
     const modeError = validateSeasonModeConfig(
@@ -170,6 +257,11 @@ export default function SeasonSprintBuilder() {
       customRoundPresets,
     );
 
+    const configPayload =
+      seasonMode === 'single' && (PRESET_CONFIG_FIELDS[scenarioPreset] || []).length > 0
+        ? scenarioConfig
+        : defaultConfigFor(basePreset);
+
     setSubmitting(true);
     setError('');
     try {
@@ -178,7 +270,7 @@ export default function SeasonSprintBuilder() {
         season_scope: inRoom ? 'room' : 'sandbox',
         name: trimmedName,
         scenario_preset: basePreset,
-        scenario_config: defaultConfigFor(basePreset),
+        scenario_config: configPayload,
         season_mode: seasonMode,
         mix_config: mixConfig,
         total_rounds: Number(totalRounds),
@@ -195,25 +287,26 @@ export default function SeasonSprintBuilder() {
         navigate(`/season-sprint/${res.id}`);
       }
     } catch (e) {
-      setError(e.message || 'Failed to create season');
+      setError(e.message || 'Failed to create practice run');
     } finally {
       setSubmitting(false);
     }
   };
 
   const scenariosLink = inRoom ? `/scenarios?room=${roomId}` : '/scenarios';
+  const rescuePct = (Number(costs.dual_source_rescue_pct ?? 1) * 100).toFixed(0);
 
   return (
     <div className="max-w-4xl space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-100">Create solo practice season</h1>
+        <h1 className="text-2xl font-semibold text-slate-100">Start a practice run</h1>
         <p className="text-sm text-slate-400">
-          Play several rounds on your own, tune your policy between rounds, and practice before joining a class.
+          Play several months on your own, tune your policy between months, and practice before joining a class.
         </p>
       </div>
       <div className="rounded-xl border border-slate-700 bg-slate-800 p-5 space-y-4">
-        <div>
-          <FieldLabel label="Season name" help={SEASON_SPRINT_COPY.seasonName} />
+        <div data-tour="sprint-name">
+          <FieldLabel label="Practice run name" help={SEASON_SPRINT_COPY.seasonName} />
           <input
             type="text"
             value={name}
@@ -223,9 +316,9 @@ export default function SeasonSprintBuilder() {
           />
           <p className="mt-1 text-xs text-slate-500">{SEASON_SPRINT_COPY.seasonNameHelper}</p>
         </div>
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid sm:grid-cols-2 gap-3" data-tour="sprint-basics">
           <div>
-            <FieldLabel label="Rounds" help={SEASON_SPRINT_COPY.rounds} />
+            <FieldLabel label="Months" help={SEASON_SPRINT_COPY.rounds} />
             <input
               type="number"
               min={1}
@@ -236,7 +329,7 @@ export default function SeasonSprintBuilder() {
             />
           </div>
           <div>
-            <FieldLabel label="Contract updates" help={SEASON_SPRINT_COPY.contractUpdates} />
+            <FieldLabel label="Policy reviews" help={SEASON_SPRINT_COPY.contractUpdates} />
             <input
               type="number"
               min={0}
@@ -247,6 +340,25 @@ export default function SeasonSprintBuilder() {
             />
           </div>
         </div>
+
+        <fieldset className="space-y-3">
+          <legend className="text-sm font-medium text-amber-500">Dual sourcing</legend>
+          <DualSourceFields
+            costs={costs}
+            onCostChange={updateCost}
+            showToggle
+            showSubFields={false}
+            toggleLabel="Enable dual sourcing"
+            inputClassName={INPUT_CLASS}
+            dataTourAnchor="sprint-dual-source"
+          />
+          {costs.dual_source_enabled && (
+            <p className="text-xs text-slate-500">
+              Defaults: ${costs.dual_source_premium_per_unit}/unit premium, {rescuePct}% supplier
+              rescue. Change these in Advanced users.
+            </p>
+          )}
+        </fieldset>
 
         <SeasonModeConfigurator
           presets={presets}
@@ -261,6 +373,33 @@ export default function SeasonSprintBuilder() {
           onPreview={openCardPreview}
           scenariosLink={scenariosLink}
           inputClassName={INPUT_CLASS}
+          dataTourAnchor="sprint-scenario"
+        />
+
+        <SeasonAdvancedSettings
+          costs={costs}
+          onCostChange={updateCost}
+          roundDuration={roundDuration}
+          onRoundDurationChange={setRoundDuration}
+          leadinDays={leadinDays}
+          onLeadinDaysChange={setLeadinDays}
+          startingInventory={startingInventory}
+          onStartingInventoryChange={setStartingInventory}
+          showDualSourceToggle={false}
+          showDualSourceSubFields={Boolean(costs.dual_source_enabled)}
+          inputClassName={INPUT_CLASS}
+          dataTourAnchor="sprint-advanced"
+          presetTuning={
+            seasonMode === 'single' && activePreset
+              ? {
+                  seasonMode,
+                  presetId: scenarioPreset,
+                  presetName: activePreset.name,
+                  scenarioConfig,
+                  onScenarioFieldChange: updateScenarioField,
+                }
+              : null
+          }
         />
 
         {error && <p className="text-sm text-red-400">{error}</p>}
@@ -269,9 +408,10 @@ export default function SeasonSprintBuilder() {
             type="button"
             onClick={submit}
             disabled={submitting}
+            data-tour="sprint-create"
             className="rounded-lg bg-amber-500 px-4 py-2 text-slate-900 font-semibold hover:bg-amber-400 disabled:opacity-50"
           >
-            {submitting ? 'Creating…' : 'Start season'}
+            {submitting ? 'Creating…' : 'Start practice run'}
           </button>
           <Link
             to={inRoom ? `/room/${roomId}` : '/dashboard'}
@@ -286,7 +426,7 @@ export default function SeasonSprintBuilder() {
         open={Boolean(cardModalPreset)}
         onClose={closeCardPreview}
         title={cardModalPreset ? `${cardModalPreset.name} — sample demand preview` : ''}
-        subtitle="Sample: 3 rounds × 30 days with 60-day historical lead-in (default preset tuning)."
+        subtitle="Sample: 3 months × 30 days with 60-day historical lead-in (default preset tuning)."
         chartData={cardModalChart.chartData}
         boundary={cardModalChart.boundary}
         roundBoundaries={cardModalChart.roundBoundaries}

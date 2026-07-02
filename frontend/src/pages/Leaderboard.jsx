@@ -182,9 +182,9 @@ export default function Leaderboard() {
             const rn = rnd?.round_number;
             setRoundLeaderTitle(
               rnd && typeof rn === 'number'
-                ? `Round ${rn} · Leaderboard`
+                ? `Month ${rn} · Leaderboard`
                 : rnd
-                  ? 'Round · Leaderboard'
+                  ? 'Month · Leaderboard'
                   : null,
             );
           }
@@ -262,7 +262,7 @@ export default function Leaderboard() {
                 to={`/room/${roomIdParam}`}
                 className="mt-1 block text-sm text-amber-500/90 hover:text-amber-400"
               >
-                ← Back to room
+                ← Back to classroom
               </Link>
             )}
             {isCohortPayload && seasonPayload?.template_name && (
@@ -276,14 +276,14 @@ export default function Leaderboard() {
                 onClick={goRoundTab}
                 disabled={isSeasonRoute && !defaultRoundIdFromSeason}
               >
-                Round
+                Month
               </TabButton>
               <TabButton
                 active={isSeasonRoute}
                 onClick={goSeasonTab}
                 disabled={!isSeasonRoute && !seasonIdFromRound && !seasonIdParam}
               >
-                Season
+                Fiscal year
               </TabButton>
             </div>
           )}
@@ -294,9 +294,9 @@ export default function Leaderboard() {
 
         {!loading && !error && unavailableNonClassSolo && (
           <p className="text-slate-300">
-            Leaderboards and season standings are not available for private solo practice. Class
-            seasons in a room include standings for you and your section; open a class from the
-            dashboard for those.
+            Leaderboards and fiscal year standings are not available for private solo practice.
+            Classroom fiscal years include standings for you and your section; open a class from
+            the dashboard for those.
           </p>
         )}
 
@@ -354,8 +354,8 @@ export default function Leaderboard() {
             {seasonColumns.length === 0 ? (
               <p className="p-6 text-slate-400">
                 {isCohortPayload
-                  ? 'No one has scored results for this template in the room yet.'
-                  : 'No scored rounds in this season yet.'}
+                  ? 'No one has scored results for this template in the classroom yet.'
+                  : 'No scored months in this fiscal year yet.'}
               </p>
             ) : (
               <table className="w-full text-left text-sm">
@@ -370,10 +370,10 @@ export default function Leaderboard() {
                         key={r.id != null ? r.id : `rn-${r.round_number}`}
                         className="px-4 py-3 whitespace-nowrap"
                       >
-                        R{r.round_number}
+                        M{r.round_number}
                       </th>
                     ))}
-                    <th className="px-4 py-3 whitespace-nowrap text-amber-500">Season total</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-amber-500">Fiscal year total</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">

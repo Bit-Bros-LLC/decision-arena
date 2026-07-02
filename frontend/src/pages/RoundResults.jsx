@@ -78,7 +78,7 @@ export default function RoundResults() {
   const breadcrumbResultsConfig = useMemo(() => {
     if (!round) return { labels: {}, afterDashboard: [] };
     const rn = round.round_number;
-    const roundPolicy = typeof rn === 'number' ? `Round ${rn} · Policy` : 'Policy';
+    const roundPolicy = typeof rn === 'number' ? `Month ${rn} · Policy` : 'Policy';
     return {
       labels: { roundPolicy },
       afterDashboard:
@@ -209,7 +209,7 @@ export default function RoundResults() {
 
   const handleUndoScore = async () => {
     if (!season?.id) return;
-    if (!window.confirm('Undo scoring for this round and reopen it for policy edits?')) return;
+    if (!window.confirm('Undo scoring for this month and reopen it for policy edits?')) return;
     setUndoBusy(true);
     setError(null);
     try {
@@ -225,7 +225,7 @@ export default function RoundResults() {
   return (
     <div className="space-y-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-slate-100">Round results</h1>
+          <h1 className="text-2xl font-semibold text-slate-100">Month results</h1>
           <div className="flex flex-wrap items-center gap-2">
             {canUndoScore && (
               <button
@@ -242,7 +242,7 @@ export default function RoundResults() {
                 to={seasonTarget}
                 className="rounded-lg border border-emerald-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-emerald-400 transition hover:bg-slate-700"
               >
-                Back to season rounds
+                {isClassSeason ? 'Back to fiscal year' : 'Back to practice run'}
               </Link>
             )}
             {round?.season_id && isClassSeason && (
@@ -250,7 +250,7 @@ export default function RoundResults() {
                 to={`/leaderboard/season/${round.season_id}`}
                 className="rounded-lg border border-slate-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 transition hover:bg-slate-700"
               >
-                Season standings
+                Fiscal year standings
               </Link>
             )}
             {(!round?.season_id || isClassSeason) && (
@@ -258,7 +258,7 @@ export default function RoundResults() {
                 to={`/leaderboard/${roundId}`}
                 className="rounded-lg border border-amber-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-amber-500 transition hover:bg-slate-700"
               >
-                Round leaderboard
+                Month leaderboard
               </Link>
             )}
           </div>
@@ -286,7 +286,7 @@ export default function RoundResults() {
                   >
                     Probabilistic Forecasting
                   </Link>{' '}
-                  in Learn, then tune your policy for the next round.
+                  in Learn, then tune your policy for the next month.
                 </p>
               </div>
               <button
@@ -341,7 +341,7 @@ export default function RoundResults() {
         <section className="rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg">
           <h2 className="mb-4 text-lg font-medium text-amber-500">Scenario review</h2>
           <p className="mb-4 text-xs text-slate-500">
-            Historical period (amber) and scored period (sky), plus the exact data used for this round.
+            Historical period (amber) and scored period (sky), plus the exact data used for this month.
           </p>
           <div className="h-72 w-full">
             <ResponsiveContainer width="100%" height="100%">
@@ -468,7 +468,7 @@ export default function RoundResults() {
               to={seasonTarget}
               className="rounded-lg border border-emerald-500/50 bg-slate-800 px-4 py-2 text-sm font-medium text-emerald-400 transition hover:bg-slate-700"
             >
-              Back to season rounds
+              {isClassSeason ? 'Back to fiscal year' : 'Back to practice run'}
             </Link>
           </div>
         )}

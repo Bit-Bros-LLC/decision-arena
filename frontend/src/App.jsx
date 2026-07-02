@@ -17,13 +17,20 @@ import AccountSettings from './pages/AccountSettings'
 import LearnHub from './pages/LearnHub'
 import LessonPage from './pages/LessonPage'
 import LandingPage from './pages/LandingPage'
+import PrivacyPolicy from './pages/PrivacyPolicy'
 import NavBar from './components/NavBar'
 import BreadcrumbBar from './components/BreadcrumbBar'
 import { BreadcrumbLabelsProvider } from './context/BreadcrumbLabelsContext'
+import { AnalyticsConsentProvider } from './context/AnalyticsConsentContext'
 import ConsentBanner from './components/ConsentBanner'
 import AnalyticsTracker from './components/AnalyticsTracker'
 import { getUser } from './api'
-import { getAnalyticsConsent, initAnalytics, setAnalyticsConsent } from './lib/analytics'
+import {
+  getAnalyticsConsent,
+  initAnalytics,
+  revokeAnalytics,
+  setAnalyticsConsent,
+} from './lib/analytics'
 import { OnboardingProvider } from './context/OnboardingContext'
 
 function ProtectedLayout() {
@@ -57,16 +64,23 @@ export default function App() {
   }
 
   const handleDeclineAnalytics = () => {
-    setAnalyticsConsent('denied')
+    revokeAnalytics()
     setConsent('denied')
   }
 
+  const consentContextValue = {
+    consent,
+    acceptAnalytics: handleAcceptAnalytics,
+    declineAnalytics: handleDeclineAnalytics,
+  }
+
   return (
-    <>
+    <AnalyticsConsentProvider value={consentContextValue}>
       <AnalyticsTracker consent={consent} />
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/room/:roomId" element={<RoomView />} />
@@ -97,6 +111,6 @@ export default function App() {
       {showConsentBanner && (
         <ConsentBanner onAccept={handleAcceptAnalytics} onDecline={handleDeclineAnalytics} />
       )}
-    </>
+    </AnalyticsConsentProvider>
   );
 }
