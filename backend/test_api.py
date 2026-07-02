@@ -39,6 +39,13 @@ student2 = requests.post(f"{BASE}/auth/register", json={
 p("Student 2", student2)
 s2_token = student2["access_token"]
 
+student3 = requests.post(f"{BASE}/auth/register", json={
+    "email": "student3@test.com", "password": "test123",
+    "display_name": "Brock Harrison", "role": "student"
+}).json()
+p("Student 3", student3)
+s3_token = student3["access_token"]
+
 # --- 2. Professor creates a room ---
 print("\n" + "="*60 + "\n STEP 2: Create Room\n" + "="*60)
 
@@ -59,6 +66,12 @@ j2 = requests.post(f"{BASE}/rooms/{room['id']}/join",
     json={"invite_code": invite_code},
     headers={"Authorization": f"Bearer {s2_token}"}).json()
 p("Student 2 joined", j2)
+
+j3 = requests.post(f"{BASE}/rooms/join",
+    json={"invite_code": invite_code},
+    headers={"Authorization": f"Bearer {s3_token}"}).json()
+assert j3.get("room_id") == room["id"], f"invite-only join failed: {j3}"
+p("Student 3 joined (invite code only)", j3)
 
 # --- 4. Professor creates a round ---
 print("\n" + "="*60 + "\n STEP 4: Create Round\n" + "="*60)
