@@ -46,7 +46,7 @@ def get_my_results(
         .first()
     )
     if not result:
-        raise HTTPException(404, "Round has not been scored yet")
+        raise HTTPException(404, "Month has not been scored yet")
 
     return {
         "policy_type": policy.policy_type,
@@ -71,9 +71,9 @@ def round_leaderboard(
     """Leaderboard for a single round - all students ranked by profit."""
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
     if rnd.status != "scored":
-        raise HTTPException(400, "Round has not been scored yet")
+        raise HTTPException(400, "Month has not been scored yet")
 
     rows = (
         db.query(ResultRow, PolicyRow, UserRow)
@@ -113,7 +113,7 @@ def season_leaderboard(
     """Cumulative leaderboard across all scored rounds in a single season."""
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
-        raise HTTPException(404, "Season not found")
+        raise HTTPException(404, "Fiscal year not found")
     _ensure_season_access(db, user, season)
 
     scored_rounds = (

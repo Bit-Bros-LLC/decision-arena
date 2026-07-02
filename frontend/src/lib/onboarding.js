@@ -4,21 +4,23 @@ export const TOUR_IDS = {
   POLICY_EDITOR: 'policy-editor',
   PROFESSOR_ROOM: 'professor-room',
   PROFESSOR_SEASON: 'professor-season',
+  SOLO_SPRINT: 'solo-sprint',
 };
 
 export const TOUR_LABELS = {
   [TOUR_IDS.POLICY_EDITOR]: 'Policy editor',
-  [TOUR_IDS.PROFESSOR_ROOM]: 'Room management',
-  [TOUR_IDS.PROFESSOR_SEASON]: 'Season setup',
+  [TOUR_IDS.PROFESSOR_ROOM]: 'Classroom management',
+  [TOUR_IDS.PROFESSOR_SEASON]: 'Fiscal year setup',
+  [TOUR_IDS.SOLO_SPRINT]: 'Practice run setup',
 };
 
 export const CHECKLIST_ITEMS = {
   watch_intro: { id: 'watch_intro', label: 'Watch the intro video' },
-  solo_season: { id: 'solo_season', label: 'Start a private solo season' },
-  join_room: { id: 'join_room', label: 'Join a class room (optional)' },
+  solo_season: { id: 'solo_season', label: 'Start a private practice run (spotlight tour on the builder)' },
+  join_room: { id: 'join_room', label: 'Join a classroom (optional)' },
   submit_policy: { id: 'submit_policy', label: 'Submit a policy' },
   create_room: { id: 'create_room', label: 'Create a classroom' },
-  create_season: { id: 'create_season', label: 'Set up your first season' },
+  create_season: { id: 'create_season', label: 'Set up your first fiscal year' },
 };
 
 const STUDENT_CHECKLIST_ORDER = ['watch_intro', 'solo_season', 'join_room', 'submit_policy'];

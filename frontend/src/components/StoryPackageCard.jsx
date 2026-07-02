@@ -25,9 +25,9 @@ export default function StoryPackageCard({
       <p className="mt-2 text-sm leading-relaxed text-slate-400">{story.summary}</p>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] text-slate-400">
-        <div className="flex justify-between"><dt>Rounds</dt><dd className="tabular-nums text-slate-200">{story.total_rounds}</dd></div>
-        <div className="flex justify-between"><dt>Contract changes</dt><dd className="tabular-nums text-slate-200">{story.contract_updates_allowed}</dd></div>
-        <div className="flex justify-between"><dt>Round length</dt><dd className="tabular-nums text-slate-200">{story.round_duration_days}d</dd></div>
+        <div className="flex justify-between"><dt>Months</dt><dd className="tabular-nums text-slate-200">{story.total_rounds}</dd></div>
+        <div className="flex justify-between"><dt>Policy reviews</dt><dd className="tabular-nums text-slate-200">{story.contract_updates_allowed}</dd></div>
+        <div className="flex justify-between"><dt>Month length</dt><dd className="tabular-nums text-slate-200">{story.round_duration_days}d</dd></div>
         <div className="flex justify-between"><dt>Start inventory</dt><dd className="tabular-nums text-slate-200">{story.starting_inventory}</dd></div>
       </dl>
 

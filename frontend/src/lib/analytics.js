@@ -51,10 +51,34 @@ export function initAnalytics() {
   ensureGtag();
   injectGtagScript();
 
+  window.gtag('consent', 'default', {
+    analytics_storage: 'granted',
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied',
+  });
+
   window.gtag('js', new Date());
-  window.gtag('config', GA_MEASUREMENT_ID, { send_page_view: false });
+  window.gtag('config', GA_MEASUREMENT_ID, {
+    send_page_view: false,
+    allow_google_signals: false,
+    allow_ad_personalization_signals: false,
+  });
   initialized = true;
   return true;
+}
+
+export function revokeAnalytics() {
+  if (!isBrowser()) return;
+  setAnalyticsConsent('denied');
+  if (initialized && window.gtag) {
+    window.gtag('consent', 'update', {
+      analytics_storage: 'denied',
+      ad_storage: 'denied',
+      ad_user_data: 'denied',
+      ad_personalization: 'denied',
+    });
+  }
 }
 
 export function trackPageView(path) {

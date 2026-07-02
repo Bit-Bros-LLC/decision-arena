@@ -72,7 +72,7 @@ export default function StoryLibrary() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-100">Story library</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Ready-made narrative seasons. Each story pre-builds every setting plus a storyline and
+          Ready-made narrative fiscal years. Each story pre-builds every setting plus a storyline and
           timed student news. Pick one and you're ready to launch.
         </p>
         <div className="mt-3 flex flex-wrap gap-3 text-sm">
@@ -81,7 +81,7 @@ export default function StoryLibrary() {
           </Link>
           {fromRoomId && (
             <Link to={`/room/${fromRoomId}/create-season`} className="text-amber-500 hover:text-amber-400">
-              ← Back to season creator
+              ← Back to fiscal year creator
             </Link>
           )}
           <Link to="/scenarios" className="text-amber-500 hover:text-amber-400">
@@ -90,7 +90,7 @@ export default function StoryLibrary() {
         </div>
         {!fromRoomId && (
           <p className="mt-2 text-xs text-slate-500">
-            Open a class first to launch a story season. Browsing here is read-only.
+            Open a class first to launch a story fiscal year. Browsing here is read-only.
           </p>
         )}
       </div>
@@ -149,9 +149,9 @@ export default function StoryLibrary() {
 
             <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {[
-                ['Rounds', open.total_rounds],
-                ['Contract changes', open.contract_updates_allowed],
-                ['Round length', `${open.round_duration_days}d`],
+                ['Months', open.total_rounds],
+                ['Policy reviews', open.contract_updates_allowed],
+                ['Month length', `${open.round_duration_days}d`],
                 ['Start inventory', open.starting_inventory],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2">
@@ -169,7 +169,7 @@ export default function StoryLibrary() {
             <div>
               <h3 className="text-sm font-medium text-amber-500">Newsroom</h3>
               <p className="mt-1 text-xs text-slate-500">
-                Students see each item as its round arrives. Forecasts preview upcoming months.
+                Students see each item as its month arrives. Forecasts preview upcoming months.
               </p>
               <div className="mt-2">
                 <StoryNews news={open.news} activeRoundNumber={null} />
@@ -183,7 +183,7 @@ export default function StoryLibrary() {
         open={Boolean(modalStory)}
         onClose={() => setModalStory(null)}
         title={modalStory ? `${modalStory.title} — demand timeline` : ''}
-        subtitle="Amber = historical lead-in students see on day one; sky = the full authored season timeline. Vertical lines mark round boundaries."
+        subtitle="Amber = historical lead-in students see on day one; sky = the full authored fiscal year timeline. Vertical lines mark month boundaries."
         chartData={modalChart.chartData}
         boundary={modalChart.boundary}
         roundBoundaries={modalChart.roundBoundaries}

@@ -79,7 +79,7 @@ def generate_highlights(daily_log: list[DailyRecord]) -> list[str]:
     if dual_days > 0 and supplier_failures == 0 and total_dual_source > 100:
         highlights.append(
             f"Paid ${total_dual_source:,.0f} in dual-source premiums with no supplier failures. "
-            f"Dual sourcing may have been unnecessary this round."
+            f"Dual sourcing may have been unnecessary this month."
         )
     elif dual_days == 0 and supplier_failures > 0 and total_swan_cost > 0:
         highlights.append(

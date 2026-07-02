@@ -3,19 +3,21 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, getUser } from '../api';
 import { FieldLabel } from '../components/FieldLabel';
 import SeasonModeConfigurator from '../components/SeasonModeConfigurator';
+import SeasonAdvancedSettings from '../components/SeasonAdvancedSettings';
 import PresetPreviewModal from '../components/PresetPreviewModal';
 import StoryPackageCard from '../components/StoryPackageCard';
 import StoryNews from '../components/StoryNews';
 import Narrative from '../components/Narrative';
 import { useBreadcrumbLabels } from '../context/BreadcrumbLabelsContext';
 import { useOnboarding } from '../context/OnboardingContext';
-import { COST_TOOLTIPS } from '../lib/costTooltips';
 import { isTourDone, TOUR_IDS } from '../lib/onboarding';
-import { buildProfessorSeasonTourSteps } from '../lib/professorSeasonTour';
+import {
+  buildProfessorSeasonTourSteps,
+  getProfessorSeasonTourStartupSelectors,
+} from '../lib/professorSeasonTour';
 import { SEASON_CREATOR_COPY } from '../lib/seasonCreatorCopy';
 import {
   defaultConfigFor,
-  PRESET_CONFIG_FIELDS,
   transformPreviewResponse,
 } from '../lib/presetPreview';
 import { loadPresetPreview } from '../hooks/usePresetPreview';
@@ -26,6 +28,7 @@ import {
   primaryScenarioPreset,
   validateSeasonModeConfig,
 } from '../lib/seasonMixConfig';
+import { isTypicalMonthDuration, TYPICAL_MONTH_DAYS_MIN, TYPICAL_MONTH_DAYS_MAX } from '../lib/seasonDuration';
 
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
@@ -61,6 +64,8 @@ export default function SeasonCreator() {
   const isProfessor = user?.role === 'professor';
   const { markChecklistItem, userId, userRole, tourRevision } = useOnboarding();
   const tourStartedRef = useRef(false);
+  const tourDriverRef = useRef(null);
+  const storyIdAtTourStartRef = useRef(null);
 
   const [presets, setPresets] = useState([]);
   const [presetsError, setPresetsError] = useState(null);
@@ -103,7 +108,9 @@ export default function SeasonCreator() {
 
   const [stories, setStories] = useState([]);
   const [storiesError, setStoriesError] = useState(null);
+  const [storiesReady, setStoriesReady] = useState(false);
   const [selectedStoryId, setSelectedStoryId] = useState(null);
+  const [customBuildOpen, setCustomBuildOpen] = useState(false);
   const [storyChartOpen, setStoryChartOpen] = useState(false);
   const [storyChartLoading, setStoryChartLoading] = useState(false);
   const [storyChartError, setStoryChartError] = useState(null);
@@ -167,6 +174,8 @@ export default function SeasonCreator() {
         if (!cancelled) setStories(Array.isArray(list) ? list : []);
       } catch (err) {
         if (!cancelled) setStoriesError(err.message || 'Could not load stories');
+      } finally {
+        if (!cancelled) setStoriesReady(true);
       }
     })();
     return () => {
@@ -185,6 +194,7 @@ export default function SeasonCreator() {
       setSelectedStoryId(null);
       return;
     }
+    setCustomBuildOpen(false);
     setSelectedStoryId(story.id);
     setTotalRounds(story.total_rounds);
     setContractUpdates(story.contract_updates_allowed);
@@ -232,14 +242,24 @@ export default function SeasonCreator() {
 
   useEffect(() => {
     tourStartedRef.current = false;
+    storyIdAtTourStartRef.current = null;
+    tourDriverRef.current?.destroy?.();
+    tourDriverRef.current = null;
   }, [roomId, tourRevision]);
 
   useEffect(() => {
-    if (!userId || !isProfessor || !presetsReady) return;
+    if (!userId || !isProfessor || !presetsReady || !storiesReady) return;
     if (isTourDone(userId, TOUR_IDS.PROFESSOR_SEASON)) return;
     if (tourStartedRef.current) return;
 
-    const steps = buildProfessorSeasonTourSteps();
+    const wantedStory = searchParams.get('story');
+    if (wantedStory && stories.some((s) => s.id === wantedStory) && !selectedStoryId) {
+      return;
+    }
+
+    const hasStorySelected = Boolean(selectedStoryId);
+    const steps = buildProfessorSeasonTourSteps(hasStorySelected);
+    const startupSelectors = getProfessorSeasonTourStartupSelectors(hasStorySelected);
 
     let cancelled = false;
     let attempt = 0;
@@ -248,7 +268,7 @@ export default function SeasonCreator() {
     function tryStartTour() {
       if (cancelled || tourStartedRef.current) return;
 
-      const missing = steps.some((step) => !document.querySelector(step.element));
+      const missing = startupSelectors.some((selector) => !document.querySelector(selector));
       if (missing) {
         if (attempt < maxAttempts) {
           attempt += 1;
@@ -261,7 +281,8 @@ export default function SeasonCreator() {
       firstElement?.scrollIntoView({ block: 'nearest', behavior: 'auto' });
 
       tourStartedRef.current = true;
-      runOnboardingTour({
+      storyIdAtTourStartRef.current = selectedStoryId;
+      tourDriverRef.current = runOnboardingTour({
         userId,
         userRole,
         tourId: TOUR_IDS.PROFESSOR_SEASON,
@@ -275,14 +296,60 @@ export default function SeasonCreator() {
       cancelled = true;
       cancelAnimationFrame(frameId);
     };
-  }, [userId, userRole, tourRevision, roomId, isProfessor, presetsReady]);
+  }, [
+    userId,
+    userRole,
+    tourRevision,
+    roomId,
+    isProfessor,
+    presetsReady,
+    storiesReady,
+    selectedStoryId,
+    searchParams,
+    stories,
+  ]);
+
+  useEffect(() => {
+    if (!selectedStoryId) return;
+    if (storyIdAtTourStartRef.current) return;
+
+    const driverInstance = tourDriverRef.current;
+    if (!driverInstance?.isActive?.()) return;
+    if (driverInstance.getActiveIndex?.() !== 0) return;
+
+    let cancelled = false;
+    let attempt = 0;
+    const maxAttempts = 15;
+
+    function tryAdvance() {
+      if (cancelled) return;
+
+      const narrative = document.querySelector('[data-tour="season-story-narrative"]');
+      if (!narrative) {
+        if (attempt < maxAttempts) {
+          attempt += 1;
+          setTimeout(tryAdvance, 100);
+        }
+        return;
+      }
+
+      narrative.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+      if (tourDriverRef.current?.isActive?.() && tourDriverRef.current.getActiveIndex?.() === 0) {
+        tourDriverRef.current.moveNext();
+      }
+    }
+
+    tryAdvance();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStoryId]);
 
   const activePreset = useMemo(
     () => presets.find((p) => p.id === activePresetId) || null,
     [presets, activePresetId],
   );
-
-  const configFields = PRESET_CONFIG_FIELDS[activePresetId] || [];
 
   const updateCost = (key, raw) => {
     if (key === 'dual_source_enabled') {
@@ -377,11 +444,11 @@ export default function SeasonCreator() {
     const duration = Number(roundDuration);
     const leadin = Number(leadinDays);
     if (!Number.isFinite(rounds) || rounds < 1) {
-      setChartError('Total rounds must be at least 1.');
+      setChartError('Total months must be at least 1.');
       return;
     }
     if (!Number.isFinite(duration) || duration < 1) {
-      setChartError('Round duration must be at least 1 day.');
+      setChartError('Month length must be at least 1 day.');
       return;
     }
     if (!Number.isFinite(leadin) || leadin < 0) {
@@ -436,11 +503,15 @@ export default function SeasonCreator() {
     setSubmitError(null);
     const trimmedName = name.trim();
     if (!trimmedName) {
-      setSubmitError('Please enter a season name');
+      setSubmitError('Please enter a fiscal year name');
       return;
     }
     if (!firstDeadline) {
-      setSubmitError('Set a first-round deadline.');
+      setSubmitError('Set a first-month deadline.');
+      return;
+    }
+    if (!storyLocked && !customBuildOpen) {
+      setSubmitError('Pick a story or expand Custom configuration to build your own.');
       return;
     }
     const deadlineIsoBase = firstDeadline.length === 16 ? `${firstDeadline}:00` : firstDeadline;
@@ -460,7 +531,7 @@ export default function SeasonCreator() {
         markChecklistItem('create_season');
         navigate(`/room/${roomId}/season/${res.id}`);
       } catch (err) {
-        setSubmitError(err.message || 'Failed to create season');
+        setSubmitError(err.message || 'Failed to create fiscal year');
       } finally {
         setSubmitting(false);
       }
@@ -479,8 +550,15 @@ export default function SeasonCreator() {
       return;
     }
     if (!firstDeadline) {
-      setSubmitError('Set a first-round deadline.');
+      setSubmitError('Set a first-month deadline.');
       return;
+    }
+    const duration = Number(roundDuration);
+    if (!isTypicalMonthDuration(duration)) {
+      const proceed = window.confirm(
+        `Month length is ${duration} days. Months are typically ${TYPICAL_MONTH_DAYS_MIN}–${TYPICAL_MONTH_DAYS_MAX} days. Create this fiscal year anyway?`,
+      );
+      if (!proceed) return;
     }
     const basePreset = primaryScenarioPreset(
       seasonMode,
@@ -509,24 +587,24 @@ export default function SeasonCreator() {
       markChecklistItem('create_season');
       navigate(`/room/${roomId}/season/${res.id}`);
     } catch (err) {
-      setSubmitError(err.message || 'Failed to create season');
+      setSubmitError(err.message || 'Failed to create fiscal year');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const formChartSubtitle = `Historical lead-in (amber) students will see on day one, then the full season timeline (sky) across ${totalRounds} rounds of ${roundDuration} days. Solid vertical line marks where round 1 begins; faint lines mark subsequent round boundaries.`;
+  const formChartSubtitle = `Historical lead-in (amber) students will see on day one, then the full fiscal year timeline (sky) across ${totalRounds} months of ${roundDuration} days. Solid vertical line marks where month 1 begins; faint lines mark subsequent month boundaries.`;
 
   return (
     <div className="space-y-8 max-w-3xl">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-100">Create season</h1>
+        <h1 className="text-2xl font-semibold text-slate-100">Create fiscal year</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Configure rules, costs, and demand scenario for your class. Students play each round before
+          Configure rules, costs, and demand scenario for your class. Students play each month before
           you score and advance.
         </p>
         <p className="mt-1 text-sm text-slate-400">
-          Room: <span className="text-slate-200">{roomLabel ?? '…'}</span>
+          Classroom: <span className="text-slate-200">{roomLabel ?? '…'}</span>
         </p>
       </div>
 
@@ -534,12 +612,11 @@ export default function SeasonCreator() {
         onSubmit={handleSubmit}
         className="space-y-8 rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg"
       >
-        <fieldset className="space-y-4">
+        <fieldset className="space-y-4" data-tour="season-stories">
           <legend className="text-lg font-medium text-amber-500">Start from a story</legend>
           <p className="text-sm text-slate-400">
-            Pick a ready-made narrative season — rounds, contract changes, duration, inventory,
-            costs, demand timeline, and student news are all pre-built for you. Or choose{' '}
-            <span className="text-slate-300">Custom configuration</span> to build your own.{' '}
+            Pick a ready-made narrative fiscal year — months, policy reviews, duration, inventory,
+            costs, demand timeline, and student news are all pre-built for you.{' '}
             <a
               href={`/stories?room=${roomId}`}
               className="text-amber-500 hover:text-amber-400"
@@ -562,26 +639,127 @@ export default function SeasonCreator() {
               />
             ))}
           </div>
-          <label
-            className={`flex w-full cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
-              storyLocked
-                ? 'border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800'
-                : 'border-amber-500 bg-amber-500/5 text-amber-300'
-            }`}
-          >
-            <input
-              type="radio"
-              name="story-choice"
-              checked={!storyLocked}
-              onChange={() => setSelectedStoryId(null)}
-              className="accent-amber-500"
-            />
-            Custom configuration (build the season manually)
-          </label>
         </fieldset>
 
-        <div>
-          <FieldLabel label="Season name" help={SEASON_CREATOR_COPY.seasonName} />
+        <details
+          className="group rounded-lg border border-slate-700 bg-slate-900/40"
+          open={customBuildOpen}
+          onToggle={(e) => {
+            const open = e.currentTarget.open;
+            setCustomBuildOpen(open);
+            if (open) setSelectedStoryId(null);
+          }}
+        >
+          <summary
+            className="flex cursor-pointer items-center justify-between px-4 py-3 text-sm font-medium text-slate-200 marker:content-none"
+            data-tour="season-custom"
+          >
+            <span>Custom configuration (build the fiscal year manually)</span>
+            <span className="text-slate-400 transition-transform group-open:rotate-90">▶</span>
+          </summary>
+          <div className="space-y-6 border-t border-slate-700 px-4 py-4">
+            <p className="text-sm text-slate-400">{SEASON_CREATOR_COPY.customConfiguration}</p>
+
+            <fieldset className="space-y-4">
+              <legend className="text-lg font-medium text-amber-500">Fiscal year rules</legend>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <FieldLabel label="Total months" help={SEASON_CREATOR_COPY.totalRounds} />
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={totalRounds}
+                    onChange={(e) => setTotalRounds(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div>
+                  <FieldLabel
+                    label="Policy reviews per student"
+                    help={SEASON_CREATOR_COPY.contractUpdatesPerStudent}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={20}
+                    value={contractUpdates}
+                    onChange={(e) => setContractUpdates(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-4">
+              <legend className="text-lg font-medium text-amber-500">Fiscal year scenario</legend>
+              <SeasonModeConfigurator
+                presets={presets}
+                seasonMode={seasonMode}
+                onSeasonModeChange={setSeasonMode}
+                scenarioPreset={activePresetId}
+                allowedPresets={allowedPresets}
+                customRoundPresets={customRoundPresets}
+                onCustomRoundPresetChange={handleCustomRoundPresetChange}
+                totalRounds={totalRounds}
+                onPresetSelect={pickPreset}
+                onPreview={openCardPreview}
+                scenariosLink={`/scenarios?room=${roomId}`}
+                showModeSelector
+                scenarioHelp={SEASON_CREATOR_COPY.seasonScenario}
+              />
+              {presetsError && <p className="text-sm text-red-400">{presetsError}</p>}
+            </fieldset>
+
+            <div>
+              <FieldLabel
+                label="Preview demand chart"
+                help={SEASON_CREATOR_COPY.previewDemand}
+              />
+              <button
+                type="button"
+                onClick={openDemandChartPreview}
+                disabled={chartLoading}
+                className="mt-1 rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700 disabled:opacity-50"
+              >
+                {chartLoading ? 'Generating…' : 'Preview demand chart'}
+              </button>
+              <p className="mt-2 text-xs text-slate-500">
+                Preview with your current fiscal year settings (months, lead-in, and tuning sliders).
+              </p>
+              {chartError && <p className="mt-2 text-sm text-red-400">{chartError}</p>}
+            </div>
+
+            <SeasonAdvancedSettings
+              costs={costs}
+              onCostChange={updateCost}
+              roundDuration={roundDuration}
+              onRoundDurationChange={setRoundDuration}
+              leadinDays={leadinDays}
+              onLeadinDaysChange={setLeadinDays}
+              startingInventory={startingInventory}
+              onStartingInventoryChange={setStartingInventory}
+              showDualSourceToggle
+              showDualSourceSubFields={Boolean(costs.dual_source_enabled)}
+              dualSourceToggleLabel="Enable dual sourcing for students"
+              summaryText={SEASON_CREATOR_COPY.advancedUsers}
+              presetTuning={
+                seasonMode === 'single' && activePreset
+                  ? {
+                      seasonMode,
+                      presetId: activePresetId,
+                      presetName: activePreset.name,
+                      scenarioConfig,
+                      onScenarioFieldChange: updateScenarioField,
+                    }
+                  : null
+              }
+            />
+          </div>
+        </details>
+
+        <div data-tour="season-name">
+          <FieldLabel label="Fiscal year name" help={SEASON_CREATOR_COPY.seasonName} />
           <input
             type="text"
             value={name}
@@ -592,6 +770,24 @@ export default function SeasonCreator() {
           <p className="mt-1 text-xs text-slate-500">{SEASON_CREATOR_COPY.seasonNameHelper}</p>
         </div>
 
+        <div data-tour="season-deadline">
+          <FieldLabel
+            label="First month deadline"
+            help={SEASON_CREATOR_COPY.firstRoundDeadline}
+          />
+          <input
+            type="datetime-local"
+            value={firstDeadline}
+            onChange={(e) => setFirstDeadline(e.target.value)}
+            className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            {storyLocked
+              ? `Subsequent months auto-schedule ${selectedStory.round_duration_days} days apart. You advance each month manually from the fiscal year dashboard.`
+              : `Subsequent months auto-schedule ${roundDuration} days apart. You advance each month manually from the fiscal year dashboard.`}
+          </p>
+        </div>
+
         {storyLocked && (
           <>
             <fieldset className="space-y-4">
@@ -599,14 +795,14 @@ export default function SeasonCreator() {
                 {selectedStory.title} · setup
               </legend>
               <p className="text-xs text-slate-500">
-                These settings are pre-selected by the story and can't be edited. Choose{' '}
-                <span className="text-slate-300">Custom configuration</span> above to build your own.
+                These settings are pre-selected by the story and can't be edited. Expand{' '}
+                <span className="text-slate-300">Custom configuration</span> below to build your own.
               </p>
               <dl className="grid gap-3 sm:grid-cols-3">
                 {[
-                  ['Total rounds', selectedStory.total_rounds],
-                  ['Contract changes', selectedStory.contract_updates_allowed],
-                  ['Round duration', `${selectedStory.round_duration_days} days`],
+                  ['Total months', selectedStory.total_rounds],
+                  ['Policy reviews', selectedStory.contract_updates_allowed],
+                  ['Month length', `${selectedStory.round_duration_days} days`],
                   ['Historical lead-in', `${selectedStory.historical_leadin_days} days`],
                   ['Starting inventory', selectedStory.starting_inventory],
                   ['Dual sourcing', selectedStory.costs?.dual_source_enabled ? 'Enabled' : 'Off'],
@@ -617,7 +813,7 @@ export default function SeasonCreator() {
                   </div>
                 ))}
               </dl>
-              <div>
+              <div data-tour="season-story-demand">
                 <button
                   type="button"
                   onClick={openStoryDemandPreview}
@@ -630,267 +826,20 @@ export default function SeasonCreator() {
               </div>
             </fieldset>
 
-            <fieldset className="space-y-3">
+            <fieldset className="space-y-3" data-tour="season-story-narrative">
               <legend className="text-lg font-medium text-amber-500">The story</legend>
               <Narrative text={selectedStory.narrative} />
             </fieldset>
 
-            <fieldset className="space-y-3">
+            <fieldset className="space-y-3" data-tour="season-newsroom">
               <legend className="text-lg font-medium text-amber-500">Newsroom preview</legend>
               <p className="text-xs text-slate-500">
-                Students see each item once its round arrives. Forecasts hint at upcoming months so
-                they can decide whether to spend a contract change.
+                Students see each item once its month arrives. Forecasts hint at upcoming months so
+                they can decide whether to spend a policy review.
               </p>
               <StoryNews news={selectedStory.news} activeRoundNumber={null} />
             </fieldset>
-
-            <div data-tour="season-deadline">
-              <FieldLabel
-                label="First round deadline"
-                help={SEASON_CREATOR_COPY.firstRoundDeadline}
-              />
-              <input
-                type="datetime-local"
-                value={firstDeadline}
-                onChange={(e) => setFirstDeadline(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
-              />
-              <p className="mt-1 text-xs text-slate-500">
-                Subsequent rounds auto-schedule {selectedStory.round_duration_days} days apart. You
-                advance each round manually from the season dashboard.
-              </p>
-            </div>
           </>
-        )}
-
-        {!storyLocked && (
-        <>
-        <fieldset className="space-y-4" data-tour="season-rules">
-          <legend className="text-lg font-medium text-amber-500">Season rules</legend>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <FieldLabel label="Total rounds" help={SEASON_CREATOR_COPY.totalRounds} />
-              <input
-                type="number"
-                min={1}
-                max={60}
-                value={totalRounds}
-                onChange={(e) => setTotalRounds(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div>
-              <FieldLabel
-                label="Contract updates per student"
-                help={SEASON_CREATOR_COPY.contractUpdatesPerStudent}
-              />
-              <input
-                type="number"
-                min={0}
-                max={20}
-                value={contractUpdates}
-                onChange={(e) => setContractUpdates(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div>
-              <FieldLabel label="Round duration (days)" help={SEASON_CREATOR_COPY.roundDuration} />
-              <input
-                type="number"
-                min={1}
-                max={90}
-                value={roundDuration}
-                onChange={(e) => setRoundDuration(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div>
-              <FieldLabel
-                label="Historical lead-in (days)"
-                help={SEASON_CREATOR_COPY.historicalLeadin}
-              />
-              <input
-                type="number"
-                min={0}
-                max={365}
-                value={leadinDays}
-                onChange={(e) => setLeadinDays(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div>
-              <FieldLabel label="Starting inventory" help={SEASON_CREATOR_COPY.startingInventory} />
-              <input
-                type="number"
-                min={0}
-                value={startingInventory}
-                onChange={(e) => setStartingInventory(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-              />
-            </div>
-            <div data-tour="season-deadline">
-              <FieldLabel
-                label="First round deadline"
-                help={SEASON_CREATOR_COPY.firstRoundDeadline}
-              />
-              <input
-                type="datetime-local"
-                value={firstDeadline}
-                onChange={(e) => setFirstDeadline(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 [color-scheme:dark]"
-              />
-            </div>
-          </div>
-          <p className="text-xs text-slate-500">
-            Subsequent rounds auto-schedule {roundDuration} days apart. You advance each round
-            manually from the season dashboard.
-          </p>
-        </fieldset>
-
-        <fieldset className="space-y-4">
-          <legend className="text-lg font-medium text-amber-500">Cost parameters</legend>
-          <div className="grid gap-4 sm:grid-cols-2">
-            {[
-              ['holding_per_unit', 'Holding / unit'],
-              ['stockout_penalty', 'Stockout penalty'],
-              ['ordering_fixed', 'Ordering (fixed)'],
-              ['per_unit_cost', 'Per-unit cost'],
-              ['selling_price', 'Selling price'],
-            ].map(([key, label, tooltipKey]) => (
-              <div key={key}>
-                <FieldLabel
-                  label={label}
-                  help={COST_TOOLTIPS[tooltipKey || label]}
-                />
-                <input
-                  type="number"
-                  step="1"
-                  value={costs[key]}
-                  onChange={(e) => updateCost(key, e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset className="space-y-4">
-          <legend className="text-lg font-medium text-amber-500">Dual sourcing</legend>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={Boolean(costs.dual_source_enabled)}
-              onChange={(e) => updateCost('dual_source_enabled', e.target.checked)}
-              className="rounded border-slate-600 accent-amber-500"
-            />
-            <FieldLabel
-              label="Enable dual sourcing for students"
-              help={COST_TOOLTIPS['Dual sourcing enabled']}
-            />
-          </label>
-          {costs.dual_source_enabled && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <FieldLabel
-                  label="Dual-source premium / unit"
-                  help={COST_TOOLTIPS['Dual-source premium / unit']}
-                />
-                <input
-                  type="number"
-                  step="0.5"
-                  min="0"
-                  value={costs.dual_source_premium_per_unit}
-                  onChange={(e) => updateCost('dual_source_premium_per_unit', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-              <div>
-                <FieldLabel
-                  label="Supplier rescue % (0.5–1)"
-                  help={COST_TOOLTIPS['Supplier rescue %']}
-                />
-                <input
-                  type="number"
-                  step="0.05"
-                  min="0.5"
-                  max="1"
-                  value={costs.dual_source_rescue_pct}
-                  onChange={(e) => updateCost('dual_source_rescue_pct', e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 tabular-nums text-slate-200 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                />
-              </div>
-            </div>
-          )}
-        </fieldset>
-
-        <fieldset className="space-y-4" data-tour="season-scenario">
-          <legend className="text-lg font-medium text-amber-500">Season scenario</legend>
-          <SeasonModeConfigurator
-            presets={presets}
-            seasonMode={seasonMode}
-            onSeasonModeChange={setSeasonMode}
-            scenarioPreset={activePresetId}
-            allowedPresets={allowedPresets}
-            customRoundPresets={customRoundPresets}
-            onCustomRoundPresetChange={handleCustomRoundPresetChange}
-            totalRounds={totalRounds}
-            onPresetSelect={pickPreset}
-            onPreview={openCardPreview}
-            scenariosLink={`/scenarios?room=${roomId}`}
-            showModeSelector
-            scenarioHelp={SEASON_CREATOR_COPY.seasonScenario}
-          />
-          {presetsError && <p className="text-sm text-red-400">{presetsError}</p>}
-        </fieldset>
-
-        {seasonMode === 'single' && activePreset && configFields.length > 0 && (
-          <fieldset className="space-y-4">
-            <legend className="text-lg font-medium text-amber-500">
-              {activePreset.name} · tuning
-            </legend>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {configFields.map((f) => (
-                <div key={f.key}>
-                  <label className="flex items-center justify-between gap-2 text-sm text-slate-300">
-                    <span>{f.label}</span>
-                    <span className="font-mono text-amber-400">
-                      {scenarioConfig[f.key] ?? f.default}
-                    </span>
-                  </label>
-                  <input
-                    type="range"
-                    min={f.min}
-                    max={f.max}
-                    step={f.step}
-                    value={scenarioConfig[f.key] ?? f.default}
-                    onChange={(e) => updateScenarioField(f.key, e.target.value)}
-                    className="mt-2 w-full accent-amber-500"
-                  />
-                </div>
-              ))}
-            </div>
-          </fieldset>
-        )}
-
-        <div>
-          <FieldLabel
-            label="Preview demand chart"
-            help={SEASON_CREATOR_COPY.previewDemand}
-          />
-          <button
-            type="button"
-            onClick={openDemandChartPreview}
-            disabled={chartLoading}
-            className="mt-1 rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700 disabled:opacity-50"
-          >
-            {chartLoading ? 'Generating…' : 'Preview demand chart'}
-          </button>
-          <p className="mt-2 text-xs text-slate-500">
-            Preview with your current season settings (rounds, lead-in, and tuning sliders).
-          </p>
-          {chartError && <p className="mt-2 text-sm text-red-400">{chartError}</p>}
-        </div>
-        </>
         )}
 
         {submitError && <p className="text-sm text-red-400">{submitError}</p>}
@@ -902,7 +851,7 @@ export default function SeasonCreator() {
             data-tour="season-create"
             className="rounded-lg bg-amber-500 px-5 py-2.5 font-semibold text-slate-900 transition hover:bg-amber-400 disabled:opacity-50"
           >
-            {submitting ? 'Creating…' : 'Create season'}
+            {submitting ? 'Creating…' : 'Create fiscal year'}
           </button>
           <button
             type="button"
@@ -918,7 +867,7 @@ export default function SeasonCreator() {
         open={Boolean(cardModalPreset)}
         onClose={closeCardPreview}
         title={cardModalPreset ? `${cardModalPreset.name} — sample demand preview` : ''}
-        subtitle="Sample: 3 rounds × 30 days with 60-day historical lead-in (default preset tuning)."
+        subtitle="Sample: 3 months × 30 days with 60-day historical lead-in (default preset tuning)."
         chartData={cardModalChart.chartData}
         boundary={cardModalChart.boundary}
         roundBoundaries={cardModalChart.roundBoundaries}
@@ -929,7 +878,7 @@ export default function SeasonCreator() {
       <PresetPreviewModal
         open={formChartOpen && previewBoundary != null}
         onClose={() => setFormChartOpen(false)}
-        title="Season demand preview"
+        title="Fiscal year demand preview"
         subtitle={formChartSubtitle}
         chartData={previewChartData}
         boundary={previewBoundary}
@@ -940,7 +889,7 @@ export default function SeasonCreator() {
         open={storyChartOpen && storyChart.boundary != null}
         onClose={() => setStoryChartOpen(false)}
         title={selectedStory ? `${selectedStory.title} — demand timeline` : 'Story demand'}
-        subtitle="Amber = historical lead-in students see on day one; sky = the full authored season timeline. Vertical lines mark round boundaries."
+        subtitle="Amber = historical lead-in students see on day one; sky = the full authored fiscal year timeline. Vertical lines mark month boundaries."
         chartData={storyChart.chartData}
         boundary={storyChart.boundary}
         roundBoundaries={storyChart.roundBoundaries}

@@ -51,9 +51,9 @@ def save_policy(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == body.round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
     if rnd.status != "active":
-        raise HTTPException(400, "Round is no longer accepting submissions")
+        raise HTTPException(400, "Month is no longer accepting submissions")
 
     # Verify user is a member of this room
     if rnd.room_id:
@@ -63,7 +63,7 @@ def save_policy(
             .first()
         )
         if not member:
-            raise HTTPException(403, "Not a member of this room")
+            raise HTTPException(403, "Not a member of this classroom")
     elif rnd.season_id:
         season = db.query(SeasonRow).filter(SeasonRow.id == rnd.season_id).first()
         if not season or season.owner_user_id != user.id:
@@ -72,7 +72,7 @@ def save_policy(
     if not _can_edit_season_round(db, user, rnd):
         raise HTTPException(
             403,
-            "Policy locked. Spend a contract update token in this round to unlock editing.",
+            "Policy locked. Spend a policy review in this month to unlock editing.",
         )
 
     # Validate the policy compiles
@@ -136,9 +136,9 @@ def delete_my_policy(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
     if rnd.status != "active":
-        raise HTTPException(400, "Round is no longer accepting submissions")
+        raise HTTPException(400, "Month is no longer accepting submissions")
 
     # Verify user is a member of this room / owner of private sandbox season.
     if rnd.room_id:
@@ -148,7 +148,7 @@ def delete_my_policy(
             .first()
         )
         if not member:
-            raise HTTPException(403, "Not a member of this room")
+            raise HTTPException(403, "Not a member of this classroom")
     elif rnd.season_id:
         season = db.query(SeasonRow).filter(SeasonRow.id == rnd.season_id).first()
         if not season or season.owner_user_id != user.id:
@@ -157,7 +157,7 @@ def delete_my_policy(
     if not _can_edit_season_round(db, user, rnd):
         raise HTTPException(
             403,
-            "Policy locked. Spend a contract update token in this round to unlock editing.",
+            "Policy locked. Spend a policy review in this month to unlock editing.",
         )
 
     policy = (
@@ -181,7 +181,7 @@ def backtest_policy(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == body.round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
 
     try:
         policy_fn = build_policy_fn(body.policy_type, body.config)

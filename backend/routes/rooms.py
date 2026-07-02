@@ -48,7 +48,7 @@ def _round_display(room: RoomRow, db: Session) -> str:
         return "Not started"
     active = next((r for r in rounds if r.status == "active"), None)
     if active:
-        return f"Round {active.round_number}"
+        return f"Month {active.round_number}"
     if any(r.status == "scored" for r in rounds):
         return "Pending"
     return "Preparing"
@@ -103,20 +103,22 @@ def list_rooms(
     return [_room_response(r, db) for r in rooms]
 
 
-@router.post("/{room_id}/join")
-def join_room(
-    room_id: str,
-    body: JoinRoomRequest,
-    user: UserRow = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    room = db.query(RoomRow).filter(RoomRow.id == room_id).first()
+def _join_room(
+    user: UserRow,
+    invite_code: str,
+    db: Session,
+    room_id: str | None = None,
+) -> dict:
+    room = None
+    if room_id:
+        room = db.query(RoomRow).filter(RoomRow.id == room_id).first()
+        if not room:
+            room = db.query(RoomRow).filter(RoomRow.invite_code == invite_code).first()
+    else:
+        room = db.query(RoomRow).filter(RoomRow.invite_code == invite_code).first()
     if not room:
-        # Also try matching by invite code in case room_id is actually the code
-        room = db.query(RoomRow).filter(RoomRow.invite_code == body.invite_code).first()
-    if not room:
-        raise HTTPException(404, "Room not found")
-    if room.invite_code != body.invite_code:
+        raise HTTPException(404, "Classroom not found")
+    if room.invite_code != invite_code:
         raise HTTPException(403, "Invalid invite code")
 
     existing = (
@@ -129,7 +131,26 @@ def join_room(
 
     db.add(RoomMemberRow(user_id=user.id, room_id=room.id))
     db.commit()
-    return {"message": "Joined room", "room_id": room.id, "room_name": room.name}
+    return {"message": "Joined classroom", "room_id": room.id, "room_name": room.name}
+
+
+@router.post("/join")
+def join_room_by_invite(
+    body: JoinRoomRequest,
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _join_room(user, body.invite_code, db)
+
+
+@router.post("/{room_id}/join")
+def join_room(
+    room_id: str,
+    body: JoinRoomRequest,
+    user: UserRow = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return _join_room(user, body.invite_code, db, room_id=room_id)
 
 
 @router.post("/{room_id}/complete")
@@ -140,9 +161,9 @@ def complete_room(
 ):
     room = db.query(RoomRow).filter(RoomRow.id == room_id).first()
     if not room or room.professor_id != user.id:
-        raise HTTPException(403, "Not your room")
+        raise HTTPException(403, "Not your classroom")
     if room.completed:
-        raise HTTPException(400, "Room already completed")
+        raise HTTPException(400, "Classroom already completed")
     room.completed = True
     db.commit()
     db.refresh(room)
