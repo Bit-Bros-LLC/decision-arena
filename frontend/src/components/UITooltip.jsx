@@ -18,12 +18,12 @@ export function UITooltip({ content, children, placement = 'bottom', fullWidth =
   const ariaDescribedBy = prev ? `${prev} ${id}` : id;
 
   return (
-    <span className={`group relative ${fullWidth ? 'block w-full' : 'inline-flex'}`}>
+    <span className={`group/tooltip relative ${fullWidth ? 'block w-full' : 'inline-flex'}`}>
       {cloneElement(child, { 'aria-describedby': ariaDescribedBy })}
       <span
         id={id}
         role="tooltip"
-        className={`pointer-events-none absolute ${posClasses} rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-left text-sm leading-relaxed text-slate-200 shadow-2xl ring-1 ring-black/20 transition-opacity duration-150 ease-out opacity-0 invisible group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100`}
+        className={`pointer-events-none absolute ${posClasses} rounded-lg border border-slate-600 bg-slate-900 px-3 py-2.5 text-left text-sm leading-relaxed text-slate-200 shadow-2xl ring-1 ring-black/20 transition-opacity duration-150 ease-out opacity-0 invisible group-hover/tooltip:visible group-hover/tooltip:opacity-100 group-focus-within/tooltip:visible group-focus-within/tooltip:opacity-100`}
       >
         {content}
       </span>
