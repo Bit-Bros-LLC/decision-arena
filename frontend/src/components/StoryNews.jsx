@@ -27,10 +27,10 @@ function NewsCard({ item, upcoming }) {
         </span>
         {upcoming ? (
           <span className="rounded-full border border-sky-400/30 bg-sky-400/10 px-2 py-0.5 text-[11px] font-medium text-sky-300">
-            Upcoming · round {item.about_round}
+            Upcoming · month {item.about_round}
           </span>
         ) : (
-          <span className="text-[11px] text-slate-500">Round {item.about_round}</span>
+          <span className="text-[11px] text-slate-500">Month {item.about_round}</span>
         )}
       </div>
       <p className="mt-1.5 text-sm font-semibold text-slate-100">{item.headline}</p>

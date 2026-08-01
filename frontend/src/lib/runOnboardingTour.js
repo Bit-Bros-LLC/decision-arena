@@ -10,6 +10,8 @@ import { trackEvent } from './analytics';
  * @property {string} description
  * @property {'top'|'right'|'bottom'|'left'} [side]
  * @property {'start'|'center'|'end'} [align]
+ * @property {('next'|'previous'|'close')[]} [showButtons]
+ * @property {boolean} [advanceOnStorySelect] - metadata for caller; not used by the runner
  */
 
 /**
@@ -58,6 +60,7 @@ export function runOnboardingTour({ userId, userRole, tourId, steps }) {
         description: step.description,
         side: step.side ?? 'bottom',
         align: step.align ?? 'start',
+        ...(step.showButtons ? { showButtons: step.showButtons } : {}),
       },
     })),
     onPopoverRender: (popover, { driver: d }) => {

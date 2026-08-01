@@ -45,7 +45,7 @@ const TEMPLATES = [
 
 const SERVICE_LEVELS = [0.85, 0.9, 0.95, 0.97, 0.99, 0.99999];
 const DUAL_SOURCE_HELP =
-  'When dual sourcing is enabled for this round, choose whether every order uses a backup supplier. Dual sourcing adds a per-unit premium (see cost parameters) but helps orders survive supplier failure events.';
+  'When dual sourcing is enabled for this month, choose whether every order uses a backup supplier. Dual sourcing adds a per-unit premium (see cost parameters) but helps orders survive supplier failure events.';
 
 function normalizePolicyConfig(policyType, raw) {
   const base = { ...defaultConfig(policyType), ...raw };
@@ -223,7 +223,7 @@ export default function PolicyEditor() {
   const breadcrumbPolicyConfig = useMemo(() => {
     if (!round) return { labels: {}, afterDashboard: [] };
     const rn = round.round_number;
-    const roundPolicy = typeof rn === 'number' ? `Round ${rn} · Policy` : 'Policy';
+    const roundPolicy = typeof rn === 'number' ? `Month ${rn} · Policy` : 'Policy';
     return {
       labels: { roundPolicy },
       afterDashboard:
@@ -291,7 +291,7 @@ export default function PolicyEditor() {
           setSeasonState(null);
         }
       } catch (e) {
-        if (!cancelled) setLoadError(e.message || 'Failed to load round');
+        if (!cancelled) setLoadError(e.message || 'Failed to load month');
       }
     })();
     return () => {
@@ -366,7 +366,7 @@ export default function PolicyEditor() {
     setUnlockingPolicy(true);
     try {
       const res = await api.unlockContractChange(round.season_id, roundId);
-      setUnlockMsg(res?.message || 'Round unlocked for policy edits');
+      setUnlockMsg(res?.message || 'Month unlocked for policy edits');
       if (round?.season_id) await refreshSeasonState(round.season_id);
     } catch (err) {
       setUnlockError(err.message || 'Could not unlock policy edits');
@@ -529,7 +529,7 @@ export default function PolicyEditor() {
   };
 
   const undoSubmitPolicy = async () => {
-    if (!window.confirm('Undo your submitted policy for this round?')) return;
+    if (!window.confirm('Undo your submitted policy for this month?')) return;
     setSubmitMsg(null);
     setSubmitError(null);
     setSubmitLoading(true);
@@ -568,7 +568,7 @@ export default function PolicyEditor() {
   if (!round && !loadError) {
     return (
       <div className="p-6">
-        <p className="text-amber-500">Loading round…</p>
+        <p className="text-amber-500">Loading month…</p>
       </div>
     );
   }
@@ -577,7 +577,7 @@ export default function PolicyEditor() {
   const isSeasonRound = Boolean(round.season_id);
   const isSeasonFollowUpRound = isSeasonRound && round.round_number > 1;
   const seasonRoundUnlocked = !isSeasonFollowUpRound || seasonState?.active_round_unlocked === true;
-  // Sandbox to try templates / backtest without spending contract updates — commit needs unlock.
+  // Sandbox to try case studies / backtest without spending policy reviews — commit needs unlock.
   const canExperiment = Boolean(user) && roundActive;
   const canSubmitPolicy =
     Boolean(user) && roundActive && (!isSeasonRound ? true : seasonRoundUnlocked);
@@ -600,12 +600,12 @@ export default function PolicyEditor() {
   const submitNextSteps = (() => {
     if (!hasSubmittedPolicy) return null;
     if (canScoreSoloRound) {
-      return 'Your policy is locked for this round. When you are ready, click Score Round to run it against hidden actuals and view results.';
+      return 'Your policy is locked for this month. When you are ready, click Score Month to run it against hidden actuals and view results.';
     }
     if (isSeasonRound) {
-      return 'Your policy is locked for this round. After the deadline, your instructor scores the round — then check Round results and season standings.';
+      return 'Your policy is locked for this month. After the deadline, your instructor scores the month — then check month results and fiscal year standings.';
     }
-    return 'Your policy is locked for this round. After the deadline, your instructor scores the round — then view Round results and the leaderboard.';
+    return 'Your policy is locked for this month. After the deadline, your instructor scores the month — then view month results and the leaderboard.';
   })();
 
   const handleScoreSoloRound = async () => {
@@ -616,7 +616,7 @@ export default function PolicyEditor() {
       await api.advanceSeason(round.season_id);
       navigate(`/round/${roundId}/results`);
     } catch (e) {
-      setSubmitError(e.message || 'Could not score round');
+      setSubmitError(e.message || 'Could not score month');
     } finally {
       setSubmitLoading(false);
     }
@@ -629,13 +629,13 @@ export default function PolicyEditor() {
           Policy designer
           {round && (
             <span className="ml-2 text-base font-normal text-slate-400">
-              · Round {round.round_number}
+              · Month {round.round_number}
             </span>
           )}
         </h1>
         {!roundActive && (
           <p className="mt-2 text-sm text-amber-500/90">
-            This round is scored; policy edits are closed.
+            This month is scored; policy edits are closed.
           </p>
         )}
 
@@ -643,25 +643,25 @@ export default function PolicyEditor() {
           <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-xs">
             {seasonState ? (
               <span className="text-slate-300">
-                Contract updates:{' '}
+                Policy reviews:{' '}
                 <span className="font-mono text-amber-400">
                   {seasonState.contract_updates_remaining}
                 </span>{' '}
                 of {seasonState.contract_updates_allowed} remaining
               </span>
             ) : (
-              <span className="text-slate-500">Loading contract updates…</span>
+              <span className="text-slate-500">Loading policy reviews…</span>
             )}
             {roundActive && !seasonRoundUnlocked && isSeasonFollowUpRound && (
               <span className="rounded-full border border-slate-600 px-2 py-0.5 text-slate-400">
-                Locked for submission · explore freely · spend a contract change only to submit
+                Locked for submission · explore freely · spend a policy review only to submit
               </span>
             )}
             {roundActive && isSeasonFollowUpRound && (
               <div className="flex items-center gap-2">
                 {seasonRoundUnlocked ? (
                   <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-400">
-                    Unlocked for this round
+                    Unlocked for this month
                   </span>
                 ) : (
                   <button
@@ -671,11 +671,11 @@ export default function PolicyEditor() {
                     className="rounded-lg border border-amber-500/50 bg-slate-900 px-3 py-1 text-xs font-medium text-amber-500 hover:bg-amber-500/10 disabled:opacity-40"
                     title={
                       (seasonState?.contract_updates_remaining ?? 0) === 0
-                        ? 'No contract updates remaining.'
-                        : 'Unlocks Submit / Undo Submit for this round. Exploring and backtests do not spend tokens.'
+                        ? 'No policy reviews remaining.'
+                        : 'Unlocks Submit / Undo Submit for this month. Exploring and backtests do not spend tokens.'
                     }
                   >
-                    {unlockingPolicy ? 'Unlocking…' : 'Spend Contract Change & Unlock'}
+                    {unlockingPolicy ? 'Unlocking…' : 'Use policy review to unlock'}
                   </button>
                 )}
               </div>
@@ -697,7 +697,7 @@ export default function PolicyEditor() {
                 Newsroom
               </h2>
               <p className="mt-1 text-[11px] text-slate-500">
-                Use forecasts to decide whether spending a contract change now is worth it.
+                Use forecasts to decide whether spending a policy review now is worth it.
               </p>
               <div className="mt-2">
                 <StoryNews news={relevant} activeRoundNumber={current} />
@@ -798,9 +798,9 @@ export default function PolicyEditor() {
           </h2>
           {isSeasonFollowUpRound && roundActive && !seasonRoundUnlocked && (
             <p className="mb-3 text-xs text-slate-500">
-              You can experiment with any policy settings and Run Backtest anytime. Spending a contract
-              change only unlocks <span className="text-slate-400">Submit Policy</span> and{' '}
-              <span className="text-slate-400">Undo Submit</span> for this round.
+              You can experiment with any policy settings and Run Backtest anytime. Spending a policy
+              review only unlocks <span className="text-slate-400">Submit Policy</span> and{' '}
+              <span className="text-slate-400">Undo Submit</span> for this month.
             </p>
           )}
           {!policyLoaded && (
@@ -812,8 +812,8 @@ export default function PolicyEditor() {
                 Policy library
               </h3>
               <p className="mt-1 text-xs text-slate-500">
-                Save your current settings to reuse on another round. Loading a preset replaces the
-                form below (does not submit to this round).
+                Save your current settings to reuse on another month. Loading a preset replaces the
+                form below (does not submit to this month).
               </p>
               <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
                 <div className="min-w-0 sm:w-[180px] sm:flex-none">
@@ -990,7 +990,7 @@ export default function PolicyEditor() {
                 disabled={!canSpendContractUpdate || submitLoading || unlockingPolicy}
                 className="rounded-lg border border-sky-500/50 bg-slate-900 px-4 py-2 text-sm font-medium text-sky-300 hover:bg-sky-500/10 disabled:opacity-40"
               >
-                {unlockingPolicy ? 'Unlocking…' : 'Spend Contract Change'}
+                {unlockingPolicy ? 'Unlocking…' : 'Use policy review'}
               </button>
             )}
             <button
@@ -1017,7 +1017,7 @@ export default function PolicyEditor() {
                 disabled={submitLoading}
                 className="rounded-lg border border-emerald-500/50 bg-slate-900 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/10 disabled:opacity-40"
               >
-                {submitLoading ? 'Scoring…' : 'Score Round'}
+                {submitLoading ? 'Scoring…' : 'Score Month'}
               </button>
             )}
           </div>

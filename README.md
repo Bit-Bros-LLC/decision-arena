@@ -1,8 +1,10 @@
-# Decision Arena 
- 
+# Decision Arena
+
 A competitive inventory simulation game where students design operating policies, backtest them against historical data, and get scored on unseen actuals. Built as a companion tool for [The Decision Factory](https://a.co/d/0i9LPR5F) by Adam DeJans Jr. & John Brandon Elam.
 
-The public **landing page** (`/`) introduces the product; signed-in users use the **dashboard**, **onboarding** (checklist + guided tours), **rooms**, **seasons**, and **Learn** modules below.
+The public **landing page** (`/`) introduces the product; signed-in users use the **dashboard**, **onboarding** (checklist + guided tours), **classrooms**, **fiscal years**, and **Learn** modules below.
+
+> **Terminology:** API routes and internal identifiers still use `/rooms`, `/seasons`, and `/rounds`. In the UI, these map to **Classroom**, **Fiscal Year**, **Month**, **Practice Run** (private solo play), **Case Study** (shared template), and **Policy Review** (limited policy changes between months).
 
 ## Getting started
 
@@ -10,14 +12,14 @@ First-run onboarding helps students and professors reach a successful play loop 
 
 | Feature | What it does |
 |---------|--------------|
-| **Dashboard checklist** | Role-based getting-started card. **Students:** watch intro → start solo season → join room (optional) → submit a policy. **Professors:** watch intro → create room → set up first season. Progress persists in browser `localStorage`, partially backed by server signals. |
-| **Guided tours** | Driver.js walkthroughs: **policy editor** (auto on first visit), **room management**, **season setup**. Restart any completed tour from the **Help** menu. |
+| **Dashboard checklist** | Role-based getting-started card. **Students:** watch intro → start a practice run → join a classroom (optional) → submit a policy. **Professors:** watch intro → create a classroom → set up the first fiscal year. Progress persists in browser `localStorage`, partially backed by server signals. |
+| **Guided tours** | Driver.js walkthroughs: **policy editor** (auto on first visit), **classroom management**, **fiscal year setup**. Restart any completed tour from the **Help** menu. |
 | **Intro video** | Set `VITE_INTRO_VIDEO_URL` (YouTube/Vimeo). Shown on first login (dismissible), from Help, and from Learn Lesson 0. |
 
 **Recommended first paths**
 
-- **Student (solo):** Dashboard → Create Private Solo Season → open round → Policy Editor (backtest → submit) → advance/score → Results
-- **Professor:** Dashboard → Create room → create season or round → activate → score → advance season
+- **Student (solo):** Dashboard → Create Private Practice Run → open a month → Policy Editor (backtest → submit) → advance/score → Results
+- **Professor:** Dashboard → Create classroom → create a fiscal year or month → activate → score → advance fiscal year
 
 Full implementation reference: [`docs/onboarding-plan.md`](docs/onboarding-plan.md).
 
@@ -25,41 +27,41 @@ Full implementation reference: [`docs/onboarding-plan.md`](docs/onboarding-plan.
 
 | Mode | What it is |
 |------|------------|
-| **Classic rounds** | Professor hand-builds each round: historical window + hidden actuals. Works great for tight instructor control. |
-| **Room seasons** | A **season** under a class **room** auto-generates many rounds from **scenario presets** and optional **mix** rules. Students play through rounds with **contract updates** (limited policy changes between rounds). |
-| **Solo seasons (sandbox)** | A private **Season Sprint** anyone can start—no room required. For practice; listed under **Solo-Seasons** in the nav. |
-| **Season Sprint templates** | Professors **publish** a template in a room; each student can **instantiate** their own copy and run it asynchronously, so the class shares the same ruleset with independent runs. |
+| **Classic months** | Professor hand-builds each month: historical window + hidden actuals. Works great for tight instructor control. |
+| **Classroom fiscal years** | A **fiscal year** under a class **classroom** auto-generates many months from **scenario presets** and optional **mix** rules. Students play through months with **policy reviews** (limited policy changes between months). |
+| **Practice runs (sandbox)** | A private **practice run** anyone can start—no classroom required. For practice; listed under **Practice Runs** in the nav. |
+| **Case studies** | Professors **publish** a case study in a classroom; each student can **instantiate** their own copy and run it asynchronously, so the class shares the same ruleset with independent runs. |
 
 ## How it works
 
-### Classic rounds (standalone)
+### Classic months (standalone)
 
-1. **Professor creates a round** with historical demand data (60+ days) and secretly sets 30 days of "actual" data
+1. **Professor creates a month** with historical demand data (60+ days) and secretly sets 30 days of "actual" data
 2. **Students explore** the historical data, pick a policy template, tune it with sliders, and backtest as many times as they want
 3. **Students submit** their policy before the deadline
-4. **Professor scores** the round — all policies run against the hidden actuals
+4. **Professor scores** the month — all policies run against the hidden actuals
 5. **Results** show summary metrics, charts, highlights, and a full day-by-day log; **leaderboards** compare the class
-6. **Repeat** with more standalone rounds, or use seasons (below) for a linked multi-round experience
+6. **Repeat** with more standalone months, or use fiscal years (below) for a linked multi-month experience
 
-### Seasons and Season Sprints
+### Fiscal years and practice runs
 
-1. A season defines **N rounds**, **costs**, **starting inventory**, **round length**, and **lead-in history** length
-2. **Scenario engine**: pick a base **preset** and a **mode**—single scenario for every round, **random mix** from allowed presets, or **custom mix** (per-round preset). Browse presets with demand previews in the **Scenario Library** (`/scenarios`)
-3. **Contract updates** cap how many times a student can revise policy between rounds; changing policy may require signaling/unlocking the next round per season rules
-4. **Activate** the season, then **advance** to score the current round and unlock the next (professor-led in class; solo owners can drive their own sandbox)
-5. **Cumulative P&L** across scored rounds is tracked; use the **Season** tab on the leaderboard for a per-round matrix plus season total
+1. A fiscal year defines **N months**, **costs**, **starting inventory**, **month length**, and **lead-in history** length
+2. **Scenario engine**: pick a base **preset** and a **mode**—single scenario for every month, **random mix** from allowed presets, or **custom mix** (per-month preset). Browse presets with demand previews in the **Scenario Library** (`/scenarios`)
+3. **Policy reviews** cap how many times a student can revise policy between months; changing policy may require signaling/unlocking the next month per fiscal year rules
+4. **Activate** the fiscal year, then **advance** to score the current month and unlock the next (professor-led in class; practice-run owners can drive their own sandbox)
+5. **Cumulative P&L** across scored months is tracked; use the **Fiscal Year** tab on the leaderboard for a per-month matrix plus fiscal year total
 
-### Solo sandbox seasons
+### Practice run sandbox
 
-1. From **Solo-Seasons** or **Create Private Solo Season**, open the **Season Sprint** builder (same levers as room seasons: rounds, mix, contract updates, etc.)
-2. The run is **scoped to you**—no class leaderboard unless you also play in a room
+1. From **Practice Runs** or **Create Private Practice Run**, open the **practice run** builder (same levers as classroom fiscal years: months, mix, policy reviews, etc.)
+2. The run is **scoped to you**—no class leaderboard unless you also play in a classroom
 3. Owners can use **undo last advance** / related flows where the UI offers them, to iterate on practice
 
-### Room Season Sprint templates (for classes)
+### Classroom case studies (for classes)
 
-1. In a **room**, a professor can **publish** a template (name + season parameters)
-2. Students (or the professor) **start** a season from a template; each start is a **new season instance** with its own randomization where applicable
-3. **Cohort standings** aggregate results across season instances of the same template—open from a room’s Season Sprint templates in the UI, or via the cohort leaderboard API
+1. In a **classroom**, a professor can **publish** a case study (name + fiscal year parameters)
+2. Students (or the professor) **start** a fiscal year from a case study; each start is a **new fiscal year instance** with its own randomization where applicable
+3. **Cohort standings** aggregate results across fiscal year instances of the same case study—open from a classroom’s case studies in the UI, or via the cohort leaderboard API
 
 ## Learn
 
@@ -91,11 +93,11 @@ Students manage a virtual factory's inventory. Each simulated day:
 
 ### Dual sourcing
 
-Optional second lever when a professor enables it for a round or season. Students trade higher unit cost for resilience when suppliers fail.
+Optional second lever when a professor enables it for a month or fiscal year. Students trade higher unit cost for resilience when suppliers fail.
 
 | Who | Control | Effect |
 |-----|---------|--------|
-| **Professor** | `dual_source_enabled` toggle on round/season costs | Unlocks the student lever for that game |
+| **Professor** | `dual_source_enabled` toggle on month/fiscal year costs | Unlocks the student lever for that game |
 | **Professor** | `dual_source_premium_per_unit` | Extra procurement cost per unit when a student chooses dual sourcing |
 | **Professor** | `dual_source_rescue_pct` | Share of a dual-sourced order quantity that survives a supplier failure (remainder is lost) |
 | **Student** | `dual_source: true/false` on policy | Single source (default) vs dual source on every order |
@@ -110,16 +112,16 @@ Three policy templates are available:
 | **Service Level** | Target fill rate (e.g. 95%) | Calculates safety stock from demand history and lead times |
 | **Reorder Point (s, Q)** | Threshold s, order size Q | When inventory position drops below s, order exactly Q units |
 
-**Policy UX**: students can save **policy presets** (reusable parameter sets) and, where allowed, **un-submit** a policy before the deadline. Rounds may be **draft**, **active**, or **scored**; professors can **activate** or **delete** rounds as the workflow requires.
+**Policy UX**: students can save **policy presets** (reusable parameter sets) and, where allowed, **un-submit** a policy before the deadline. Months may be **draft**, **active**, or **scored**; professors can **activate** or **delete** months as the workflow requires.
 
 **After scoring**, **results** include: headline **P&L**, service level, stockout days, dual-source spend, and supplier failure hit counts; a **scenario review** chart (historical vs actual demand) with optional raw JSON; **daily P&L** bar chart; auto **highlights**; and a scrollable **daily log** (demand, fulfillment, orders, inventory, events).
 
-**Leaderboards**: switch between **Round** (one round) and **Season** (matrix of profit per round plus **season total**). The round view adds service level, stockouts, dual-source spend, and a mini **daily P&L** sparkline per row; the season view uses **sticky** rank and name columns for wide tables.
+**Leaderboards**: switch between **Month** (one month) and **Fiscal Year** (matrix of profit per month plus **fiscal year total**). The month view adds service level, stockouts, dual-source spend, and a mini **daily P&L** sparkline per row; the fiscal year view uses **sticky** rank and name columns for wide tables.
 
 ### Professor tools
 
-- **Scenario Library** (`/scenarios`) — browse engine scenario presets with demand preview charts (amber = historical lead-in students see; sky = full season demand). Linked from season creator and room flows when picking mix modes.
-- **Round authoring** — create standalone rounds with optional dual sourcing, costs, and historical/actual JSON (see Admin round editor).
+- **Scenario Library** (`/scenarios`) — browse engine scenario presets with demand preview charts (amber = historical lead-in students see; sky = full fiscal year demand). Linked from fiscal year creator and classroom flows when picking mix modes.
+- **Month authoring** — create standalone months with optional dual sourcing, costs, and historical/actual JSON (see Admin month editor).
 
 ## Tech Stack
 
@@ -192,17 +194,17 @@ decision-arena/
                             results, lessons, room solo templates, season member state, etc.
     routes/
       auth_routes.py        Register, login, profile, admin password reset, list users
-      rooms.py              Rooms + join + complete (end class)
-      rounds.py             Standalone rounds: CRUD, activate, delete, score
+      rooms.py              Classrooms + join + complete (end class)
+      rounds.py             Standalone months: CRUD, activate, delete, score
       policies.py           Save/update policy, get, delete (un-submit), backtest
       policy_presets.py     User policy presets
-      results.py            Per-round results, round/season/cohort leaderboards
+      results.py            Per-month results, month/fiscal year/cohort leaderboards
       lessons.py            Lesson progress
-      seasons.py            Season CRUD, advance, templates, solo/sandbox lists
+      seasons.py            Fiscal year CRUD, advance, templates, practice-run/sandbox lists
       onboarding.py         GET /users/me/onboarding-status
     simulation/
       engine.py             run_simulation()
-      season_scenarios.py   Presets, mixing, round slicing
+      season_scenarios.py   Presets, mixing, month slicing
       policies.py           Policy template executors
       highlights.py         Key-moment text
       models.py             Dataclasses (State, Decision, DayScenario, etc.)
@@ -211,13 +213,13 @@ decision-arena/
       pages/
         LandingPage.jsx     Marketing landing
         Login.jsx, Dashboard.jsx, AccountSettings.jsx
-        RoomView.jsx        Room: rounds, seasons, Season Sprint templates
-        Admin.jsx           Create/edit standalone rounds
+        RoomView.jsx        Classroom: months, fiscal years, case studies
+        Admin.jsx           Create/edit standalone months
         SeasonCreator.jsx, SeasonView.jsx, SeasonSprintBuilder.jsx, SoloSeasonsPage.jsx
         ScenarioLibrary.jsx Browse scenario presets with demand previews
-        PolicyEditor.jsx    Play round: backtest, submit
+        PolicyEditor.jsx    Play month: backtest, submit
         RoundResults.jsx    Scored results, charts, log
-        Leaderboard.jsx     Round + season + cohort
+        Leaderboard.jsx     Month + fiscal year + cohort
         LearnHub.jsx, LessonPage.jsx, lessons/   # 11 interactive lessons (incl. EnterTheArena)
       components/           NavBar, OnboardingTour, DashboardChecklist, HelpMenu, IntroVideoModal, …
       context/              OnboardingContext, breadcrumb labels
@@ -243,35 +245,35 @@ decision-arena/
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/users/me/onboarding-status` | Server signals for onboarding checklist (policy submitted, solo season, rooms, etc.) |
+| GET | `/users/me/onboarding-status` | Server signals for onboarding checklist (policy submitted, practice run, classrooms, etc.) |
 
 ### Rooms
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/rooms` | Create room (professor) |
-| GET | `/rooms` | List my rooms |
+| POST | `/rooms` | Create classroom (professor) |
+| GET | `/rooms` | List my classrooms |
 | POST | `/rooms/{room_id}/join` | Join with invite code |
 | POST | `/rooms/{room_id}/complete` | Mark class complete (end class) |
 
-### Rounds (standalone)
+### Rounds (standalone months)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/rounds` | Create round |
-| PUT | `/rounds/{round_id}` | Update round |
-| GET | `/rounds/{round_id}` | Get round (actuals redacted until scored) |
-| GET | `/rounds/room/{room_id}` | List rounds in room |
+| POST | `/rounds` | Create month |
+| PUT | `/rounds/{round_id}` | Update month |
+| GET | `/rounds/{round_id}` | Get month (actuals redacted until scored) |
+| GET | `/rounds/room/{room_id}` | List months in classroom |
 | POST | `/rounds/{round_id}/activate` | Activate |
 | POST | `/rounds/{round_id}/score` | Score |
-| DELETE | `/rounds/{round_id}` | Delete round |
+| DELETE | `/rounds/{round_id}` | Delete month |
 
 ### Policies and presets
 
 | Method | Path | Description |
 |--------|------|-------------|
 | PUT | `/policies` | Save or update policy |
-| GET | `/policies/{round_id}` | Get my policy for round |
+| GET | `/policies/{round_id}` | Get my policy for month |
 | DELETE | `/policies/{round_id}` | Un-submit / clear policy (when allowed) |
 | POST | `/policies/backtest` | Backtest on historical data |
 | GET | `/policy-presets` | List my saved policy presets |
@@ -283,9 +285,9 @@ decision-arena/
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/results/{round_id}` | My results (after score) |
-| GET | `/leaderboard/{round_id}` | Round leaderboard |
-| GET | `/leaderboard/season/{season_id}` | Season standings (per-round + total) |
-| GET | `/leaderboard/room/{room_id}/template/{template_id}/cohort` | Cohort standings across season instances of one room template (also in UI from room Season Sprint templates) |
+| GET | `/leaderboard/{round_id}` | Month leaderboard |
+| GET | `/leaderboard/season/{season_id}` | Fiscal year standings (per-month + total) |
+| GET | `/leaderboard/room/{room_id}/template/{template_id}/cohort` | Cohort standings across fiscal year instances of one classroom case study (also in UI from classroom case studies) |
 
 ### Lessons
 
@@ -295,25 +297,25 @@ decision-arena/
 | POST | `/lessons/{slug}/complete` | Mark complete |
 | POST | `/lessons/{slug}/reset` | Reset progress |
 
-### Seasons and Season Sprint templates
+### Seasons and case studies
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/seasons/presets` | List engine scenario presets |
-| POST | `/seasons/preview` | Preview generated season data (no persist) |
-| POST | `/seasons` | Create season |
-| GET | `/seasons/{season_id}` | Get season + rounds |
-| GET | `/seasons/{season_id}/my-state` | My contract-update state, etc. |
+| POST | `/seasons/preview` | Preview generated fiscal year data (no persist) |
+| POST | `/seasons` | Create fiscal year |
+| GET | `/seasons/{season_id}` | Get fiscal year + months |
+| GET | `/seasons/{season_id}/my-state` | My policy-review state, etc. |
 | POST | `/seasons/{season_id}/activate` | Activate |
 | POST | `/seasons/{season_id}/advance` | Score current and advance |
 | POST | `/seasons/{season_id}/undo-latest-advance` | Undo last advance (when allowed) |
-| POST | `/seasons/{season_id}/rounds/{round_id}/unlock` | Unlock contract-change edit for a round |
-| GET | `/seasons/room/{room_id}` | List seasons in room |
-| GET | `/seasons/sandbox` | List current user’s seasons with `season_scope` sandbox only |
-| GET | `/seasons/my-solo` | List current user’s solo seasons |
-| GET | `/seasons/room/{room_id}/solo-templates` | List Season Sprint templates for room |
-| POST | `/seasons/room/{room_id}/solo-templates` | Create/publish template |
-| POST | `/seasons/room/{room_id}/solo-templates/{template_id}/instantiate` | Start a new season from template |
+| POST | `/seasons/{season_id}/rounds/{round_id}/unlock` | Unlock policy-change edit for a month |
+| GET | `/seasons/room/{room_id}` | List fiscal years in classroom |
+| GET | `/seasons/sandbox` | List current user’s fiscal years with `season_scope` sandbox only |
+| GET | `/seasons/my-solo` | List current user’s practice runs |
+| GET | `/seasons/room/{room_id}/solo-templates` | List case studies for classroom |
+| POST | `/seasons/room/{room_id}/solo-templates` | Create/publish case study |
+| POST | `/seasons/room/{room_id}/solo-templates/{template_id}/instantiate` | Start a new fiscal year from case study |
 
 ## Deployment
 
@@ -348,13 +350,12 @@ decision-arena/
 - More Learn lessons (multi-echelon inventory, EOQ)
 - Code policies (e.g. Monaco editor + sandboxed execution)
 - Richer **scenario construction** (e.g. from probability distributions beyond current presets and mix modes)
-- Daily drip reveal of actuals throughout a round
+- Daily drip reveal of actuals throughout a month
 - **CSV upload** for hand-authored historical data (not in the app yet)
-- Deeper **shared template / library** experiences beyond per-room Season Sprint templates (e.g. org-wide or discoverable libraries)
+- Deeper **shared template / library** experiences beyond per-classroom case studies (e.g. org-wide or discoverable libraries)
 - Email (or in-app) notifications when results post
 
 ## License
 
 Built by [Bit Bros Data](https://bitbrosdata.com). Based on *The Decision Factory*.
-
 

@@ -34,4 +34,4 @@ def test_custom_mix_requires_full_round_plan():
 if __name__ == "__main__":
     test_random_mix_generates_round_plan()
     test_custom_mix_requires_full_round_plan()
-    print("Season Sprint tests passed")
+    print("Case study tests passed")

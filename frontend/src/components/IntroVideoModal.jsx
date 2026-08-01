@@ -65,7 +65,7 @@ export default function IntroVideoModal({ open, onClose }) {
               <p className="text-base font-medium text-slate-200">Intro video coming soon</p>
               <p className="mt-2 max-w-md text-sm text-slate-400">
                 A short walkthrough of the game — two daily decisions, policies, hidden actuals, and
-                seasons — will appear here once production is complete.
+                fiscal years — will appear here once production is complete.
               </p>
             </div>
           )}

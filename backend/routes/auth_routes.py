@@ -158,7 +158,7 @@ def admin_reset_password(
 ):
     allowed_ids = _get_professor_student_ids(professor.id, db)
     if body.user_id not in allowed_ids:
-        raise HTTPException(403, "You can only reset passwords for students in your rooms")
+        raise HTTPException(403, "You can only reset passwords for students in your classrooms")
 
     target = db.query(UserRow).filter(UserRow.id == body.user_id).first()
     if not target:

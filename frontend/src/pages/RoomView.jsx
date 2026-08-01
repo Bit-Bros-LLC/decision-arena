@@ -47,6 +47,11 @@ export default function RoomView() {
     () => adhocRounds.find((r) => r.status === 'active') ?? null,
     [adhocRounds],
   );
+  const sharedSeasons = useMemo(
+    () => seasons.filter((s) => !s.source_template_id),
+    [seasons],
+  );
+  const fiscalYearsToShow = isProfessor ? seasons : sharedSeasons;
 
   const load = useCallback(async () => {
     setError(null);
@@ -64,7 +69,7 @@ export default function RoomView() {
       setSeasons(Array.isArray(seasonsList) ? seasonsList : []);
       setSoloTemplates(Array.isArray(templatesList) ? templatesList : []);
     } catch (e) {
-      setError(e.message || 'Failed to load room');
+      setError(e.message || 'Failed to load classroom');
       setRoom(null);
       setRounds([]);
       setSeasons([]);
@@ -159,7 +164,7 @@ export default function RoomView() {
       await api.scoreRound(roundId);
       await load();
     } catch (e) {
-      setError(e.message || 'Could not score round');
+      setError(e.message || 'Could not score month');
     } finally {
       setScoringId(null);
     }
@@ -171,7 +176,7 @@ export default function RoomView() {
       await api.activateRound(roundId);
       await load();
     } catch (e) {
-      setError(e.message || 'Could not activate round');
+      setError(e.message || 'Could not activate month');
     } finally {
       setActivatingId(null);
     }
@@ -191,13 +196,13 @@ export default function RoomView() {
   };
 
   const handleDeleteRound = async (roundId) => {
-    if (!window.confirm('Delete this round? All policies and results will be lost.')) return;
+    if (!window.confirm('Delete this month? All policies and results will be lost.')) return;
     setDeletingId(roundId);
     try {
       await api.deleteRound(roundId);
       await load();
     } catch (e) {
-      setError(e.message || 'Could not delete round');
+      setError(e.message || 'Could not delete month');
     } finally {
       setDeletingId(null);
     }
@@ -206,7 +211,7 @@ export default function RoomView() {
   const handleCreateTemplate = async () => {
     const trimmedName = templateName.trim();
     if (!trimmedName) {
-      setTemplateError('Please enter a template name');
+      setTemplateError('Please enter a case study name');
       return;
     }
     setTemplateError('');
@@ -237,7 +242,7 @@ export default function RoomView() {
       });
       await load();
     } catch (e) {
-      setTemplateError(e.message || 'Could not create template');
+      setTemplateError(e.message || 'Could not create case study');
     }
   };
 
@@ -247,14 +252,14 @@ export default function RoomView() {
       const season = await api.instantiateRoomSoloTemplate(roomId, templateId);
       window.location.href = `/room/${roomId}/season/${season.id}`;
     } catch (e) {
-      setTemplateError(e.message || 'Could not start Season Sprint');
+      setTemplateError(e.message || 'Could not start case study');
     }
   };
 
   if (loading) {
     return (
       <div className="p-6">
-        <p className="text-amber-500">Loading room…</p>
+        <p className="text-amber-500">Loading classroom…</p>
       </div>
     );
   }
@@ -262,7 +267,7 @@ export default function RoomView() {
   if (!room) {
     return (
       <div className="p-6">
-        <p className="text-red-400">{error || 'Room not found or you are not a member.'}</p>
+        <p className="text-red-400">{error || 'Classroom not found or you are not a member.'}</p>
       </div>
     );
   }
@@ -283,7 +288,7 @@ export default function RoomView() {
               End class
             </h2>
             <p className="mt-3 text-sm text-slate-300">
-              Are you sure you want to complete the class? No more rounds will be allowed to be
+              Are you sure you want to complete the class? No more standalone months will be allowed to be
               created.
             </p>
             <div className="mt-6 flex flex-wrap justify-end gap-2">
@@ -360,14 +365,14 @@ export default function RoomView() {
               to={`/room/${roomId}/create-season`}
               className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400"
             >
-              Create Season
+              Create fiscal year
             </Link>
           )}
           <Link
             to={`/room/${roomId}/season-sprint/new`}
             className="rounded-lg border border-emerald-500/40 px-4 py-2 text-sm text-emerald-400 transition hover:bg-emerald-500/10"
           >
-            Create {room.name} Solo Season
+            Create {room.name} practice run
           </Link>
           {isProfessor && !roomComplete && (
             <button
@@ -383,16 +388,17 @@ export default function RoomView() {
           )}
         </div>
 
-        {isProfessor && (
-          <div data-tour="room-activate" className="mb-8">
-            <h2 className="mb-4 text-lg font-medium text-slate-100">Seasons</h2>
-            {seasons.length === 0 ? (
+        <div data-tour="room-activate" className="mb-8">
+            <h2 className="mb-4 text-lg font-medium text-slate-100">Fiscal years</h2>
+            {fiscalYearsToShow.length === 0 ? (
               <p className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 p-6 text-center text-sm text-slate-400">
-                No seasons yet. Create one to run a multi-round class competition.
+                {isProfessor
+                  ? 'No fiscal years yet. Create one to run a multi-month class competition.'
+                  : 'No class fiscal years yet. Your professor may publish one from Create fiscal year.'}
               </p>
             ) : (
             <ul className="space-y-3">
-              {seasons.map((s) => {
+              {fiscalYearsToShow.map((s) => {
                 const scored = s.rounds.filter((r) => r.status === 'scored').length;
                 const active = s.rounds.find((r) => r.status === 'active');
                 const isTemplateRun = Boolean(s.source_template_id);
@@ -419,7 +425,7 @@ export default function RoomView() {
                         <p className="font-semibold text-slate-100">{listTitle}</p>
                         <p className="mt-0.5 text-xs text-slate-500">
                           Preset: <span className="text-slate-300">{s.scenario_preset}</span> ·{' '}
-                          {s.total_rounds} rounds · {s.contract_updates_allowed} contract updates
+                          {s.total_rounds} months · {s.contract_updates_allowed} policy reviews
                         </p>
                         <p className="mt-0.5 text-xs">
                           Status: <span className={badgeColor}>{s.status}</span> · {scored}/
@@ -427,7 +433,7 @@ export default function RoomView() {
                           {active && (
                             <>
                               {' '}
-                              · Round <span className="text-amber-400">{active.round_number}</span>{' '}
+                              · Month <span className="text-amber-400">{active.round_number}</span>{' '}
                               active
                             </>
                           )}
@@ -438,13 +444,13 @@ export default function RoomView() {
                           to={`/room/${roomId}/season/${s.id}`}
                           className="rounded-lg border border-amber-500/40 px-3 py-1.5 text-sm text-amber-500 hover:bg-amber-500/10"
                         >
-                          Open season
+                          Open fiscal year
                         </Link>
                         <Link
                           to={standingsTo}
                           className="rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-1.5 text-sm text-slate-200 transition hover:border-amber-500/40 hover:text-amber-400"
                         >
-                          Season standings
+                          Fiscal year standings
                         </Link>
                       </div>
                     </div>
@@ -454,16 +460,15 @@ export default function RoomView() {
             </ul>
             )}
           </div>
-        )}
 
         <div className="mb-8 rounded-xl border border-slate-700 bg-slate-800 p-4">
-          <h2 className="text-lg font-medium text-slate-100">Season Sprint templates</h2>
-          <p className="text-xs text-slate-500">Professor can publish shared templates. Students run them asynchronously on their own copies.</p>
+          <h2 className="text-lg font-medium text-slate-100">Case studies</h2>
+          <p className="text-xs text-slate-500">Professor can publish shared case studies. Students run them asynchronously on their own copies.</p>
           {isProfessor && (
             <div className="mt-3 space-y-2">
               <div className="flex flex-wrap items-end gap-2">
                 <div className="min-w-[12rem] flex-1">
-                  <FieldLabel label="Template name" help={SEASON_SPRINT_COPY.templateName} />
+                  <FieldLabel label="Case study name" help={SEASON_SPRINT_COPY.templateName} />
                   <input
                     type="text"
                     value={templateName}
@@ -488,7 +493,7 @@ export default function RoomView() {
                   onClick={handleCreateTemplate}
                   className="rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-medium text-slate-900 hover:bg-amber-400"
                 >
-                  Publish template
+                  Publish case study
                 </button>
               </div>
               <p className="text-xs text-slate-500">{SEASON_SPRINT_COPY.templateHelper}</p>
@@ -496,10 +501,10 @@ export default function RoomView() {
           )}
           {templateError && <p className="mt-2 text-sm text-red-400">{templateError}</p>}
           <div className="mt-3 space-y-2">
-            {soloTemplates.length === 0 && <p className="text-sm text-slate-500">No templates yet.</p>}
+            {soloTemplates.length === 0 && <p className="text-sm text-slate-500">No case studies yet.</p>}
             {soloTemplates.map((t) => (
               <div key={t.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-700 p-2">
-                <p className="text-sm text-slate-200">{t.name} · {t.total_rounds} rounds · {t.season_mode}</p>
+                <p className="text-sm text-slate-200">{t.name} · {t.total_rounds} months · {t.season_mode}</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
                     to={`/leaderboard/room/${roomId}/template/${t.id}/cohort`}
@@ -521,12 +526,12 @@ export default function RoomView() {
         </div>
 
         <div data-tour="room-score">
-        <h2 className="mb-4 text-lg font-medium text-slate-100">Rounds</h2>
+        <h2 className="mb-4 text-lg font-medium text-slate-100">Standalone months</h2>
         {adhocRounds.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-600 bg-slate-800/50 p-8 text-center text-slate-400">
-            {seasons.length > 0
-              ? 'No ad-hoc rounds. Open a season above to see its rounds.'
-              : 'No rounds yet.'}
+            {fiscalYearsToShow.length > 0
+              ? 'No standalone months. Open a fiscal year above to see its months.'
+              : 'No months yet.'}
           </p>
         ) : (
           <ul className="space-y-4">
@@ -549,7 +554,7 @@ export default function RoomView() {
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div>
                       <p className="font-semibold text-slate-100">
-                        Round {r.round_number}
+                        Month {r.round_number}
                         {r.status === 'draft' && (
                           <span className="ml-2 rounded bg-slate-700 px-2 py-0.5 text-xs font-normal text-slate-400">
                             Draft
@@ -605,7 +610,7 @@ export default function RoomView() {
                                 data-tour={activeAdhocRound?.id === r.id ? 'room-score-btn' : undefined}
                                 className="rounded-lg border border-slate-500 px-3 py-1.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50"
                               >
-                                {scoringId === r.id ? 'Scoring…' : 'Score Round'}
+                                {scoringId === r.id ? 'Scoring…' : 'Score Month'}
                               </button>
                               <button
                                 type="button"

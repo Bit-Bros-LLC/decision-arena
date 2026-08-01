@@ -7,6 +7,8 @@ Parallel execution companion used during Cursor Multitask / multi-agent implemen
 
 **Last updated:** 2026-06-25
 
+> **Terminology:** API routes and internal identifiers still use `/rooms`, `/seasons`, and `/rounds`. In the UI, these map to **Classroom**, **Fiscal Year**, **Month**, **Practice Run**, **Case Study**, and **Policy Review**.
+
 ---
 
 ## Final status (slices 1–8 + Wave 1)
@@ -15,19 +17,19 @@ Parallel execution companion used during Cursor Multitask / multi-agent implemen
 |---------------|--------|-------|
 | 1–8 | Shipped | Commits `0557f35`, `3fbaf5d`, `a54bbc8` |
 | Track 0 (mix parity) | Shipped | `SeasonModeConfigurator`, SeasonCreator mix modes |
-| Track 5 | Shipped | Professor-room tour ownership gate |
+| Track 5 | Shipped | Professor-classroom tour ownership gate |
 | Track 7 | Shipped | First-login video + README env docs |
 | Tracks 8a–8c | Shipped | Empty states, debrief, post-submit copy |
 
 **Pre-flight:** Completed — all deliverables committed.  
 **Integration smoke test:** Completed 2026-06-25 (see checklist below).
 
-### Season builders (reference)
+### Fiscal year builders (reference)
 
 | Surface | Route | Mix modes |
 |---------|-------|-----------|
-| **SeasonCreator** | `/room/:roomId/create-season` | Professor class seasons — `single` / `random_mix` / `custom_mix` |
-| **SeasonSprintBuilder** | `/season-sprint/new`, `/room/:roomId/season-sprint/new` | Solo/sprint — shared `SeasonModeConfigurator` |
+| **SeasonCreator** | `/room/:roomId/create-season` | Professor class fiscal years — `single` / `random_mix` / `custom_mix` |
+| **SeasonSprintBuilder** | `/season-sprint/new`, `/room/:roomId/season-sprint/new` | Practice runs — shared `SeasonModeConfigurator` |
 
 Backend `CreateSeasonRequest` accepts `season_mode` and `mix_config`.
 
@@ -75,11 +77,11 @@ flowchart TB
 
 ## Track 0 — Mix mode parity + explainer
 
-**Goal:** Professor class seasons support `single` / `random_mix` / `custom_mix` like solo sprints.
+**Goal:** Professor class fiscal years support `single` / `random_mix` / `custom_mix` like practice runs.
 
 **Acceptance:**
 
-1. Professor can create a `random_mix` class season from SeasonCreator.
+1. Professor can create a `random_mix` class fiscal year from SeasonCreator.
 2. SeasonSprintBuilder behavior unchanged.
 3. Mix explainer visible under Mode dropdown on both surfaces.
 4. `professor-season` tour step mentions mode + preview.
@@ -90,7 +92,7 @@ flowchart TB
 
 **Acceptance:**
 
-1. Visiting a room as professor-but-not-owner does not auto-start the tour.
+1. Visiting a classroom as professor-but-not-owner does not auto-start the tour.
 2. Owning professor still gets tour on first visit.
 
 ---
@@ -109,8 +111,8 @@ flowchart TB
 
 **Acceptance:**
 
-1. Student with empty dashboard sees join-room emphasis.
-2. Professor with empty dashboard sees create-room emphasis.
+1. Student with empty dashboard sees join-classroom emphasis.
+2. Professor with empty dashboard sees create-classroom emphasis.
 
 ---
 
@@ -135,11 +137,11 @@ flowchart TB
 
 ### Checklist
 
-- [x] Track 0: Class season with `random_mix` creates successfully
-- [x] Track 0: Solo sprint `custom_mix` still works
+- [x] Track 0: Class fiscal year with `random_mix` creates successfully
+- [x] Track 0: Practice run `custom_mix` still works
 - [x] Track 0: Mix explainer visible on both builders
-- [x] Track 5: Non-owner professor room — no tour
-- [x] Track 5: Owner professor room — tour on first visit
+- [x] Track 5: Non-owner professor classroom — no tour
+- [x] Track 5: Owner professor classroom — tour on first visit
 - [x] Track 7: First-login modal once; dismissed respects flag
 - [x] Track 8a: Student/professor empty dashboard CTAs
 - [x] Track 8b: Results debrief once + dismiss
@@ -151,7 +153,7 @@ flowchart TB
 
 | PR title | Tracks |
 |----------|--------|
-| `feat(onboarding): mix mode parity for class seasons` | 0 |
+| `feat(onboarding): mix mode parity for class fiscal years` | 0 |
 | `fix(onboarding): professor-room tour ownership gate` | 5 |
 | `feat(onboarding): intro video first-login prompt` | 7 |
 | `feat(onboarding): empty states and debrief polish` | 8a + 8b + 8c |
@@ -164,6 +166,6 @@ flowchart TB
 |-------|----------|
 | Master plan | `docs/onboarding-plan.md` |
 | Mix simulation | `backend/simulation/season_scenarios.py` |
-| Create season API | `backend/routes/seasons.py` |
-| Sprint copy | `frontend/src/lib/seasonSprintCopy.js` |
-| Class season copy | `frontend/src/lib/seasonCreatorCopy.js` |
+| Create fiscal year API | `backend/routes/seasons.py` |
+| Practice run copy | `frontend/src/lib/seasonSprintCopy.js` |
+| Class fiscal year copy | `frontend/src/lib/seasonCreatorCopy.js` |

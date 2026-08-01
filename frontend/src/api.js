@@ -57,7 +57,10 @@ export const api = {
 
   getRooms: () => request('/rooms'),
   createRoom: (name) => request('/rooms', { method: 'POST', body: JSON.stringify({ name }) }),
-  joinRoom: (roomId, invite_code) => request(`/rooms/${roomId}/join`, { method: 'POST', body: JSON.stringify({ invite_code }) }),
+  joinRoom: (roomId, invite_code) =>
+    roomId
+      ? request(`/rooms/${roomId}/join`, { method: 'POST', body: JSON.stringify({ invite_code }) })
+      : request('/rooms/join', { method: 'POST', body: JSON.stringify({ invite_code }) }),
   completeRoom: (roomId) => request(`/rooms/${roomId}/complete`, { method: 'POST' }),
 
   getRound: (roundId) => request(`/rounds/${roundId}`),

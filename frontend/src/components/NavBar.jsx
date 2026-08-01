@@ -46,7 +46,7 @@ export default function NavBar() {
               : 'text-slate-400 hover:text-amber-300'
           }`}
         >
-          Solo-Seasons
+          Practice Runs
         </button>
       </div>
 

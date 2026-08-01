@@ -99,7 +99,7 @@ export default function SeasonView() {
       await api.activateSeason(seasonId);
       await load();
     } catch (err) {
-      setError(err.message || 'Could not activate season');
+      setError(err.message || 'Could not activate fiscal year');
     } finally {
       setBusy(false);
     }
@@ -120,12 +120,12 @@ export default function SeasonView() {
       }
       if (!hasPolicy) {
         const proceed = window.confirm(
-          `Round ${activeRound.round_number} has no policy submitted. Continuing will score this round without your policy and then advance. Continue anyway?`,
+          `Month ${activeRound.round_number} has no policy submitted. Continuing will score this month without your policy and then advance. Continue anyway?`,
         );
         if (!proceed) return;
       }
     } else {
-      if (!window.confirm('Score the current round and advance to the next?')) {
+      if (!window.confirm('Score the current month and advance to the next?')) {
         return;
       }
     }
@@ -143,7 +143,7 @@ export default function SeasonView() {
   };
 
   const handleUndoLatestScore = async () => {
-    if (!window.confirm('Undo the latest scored round and reopen it for editing?')) {
+    if (!window.confirm('Undo the latest scored month and reopen it for editing?')) {
       return;
     }
     setUndoBusy(true);
@@ -161,7 +161,7 @@ export default function SeasonView() {
   if (loading) {
     return (
       <div className="p-6">
-        <p className="text-amber-500">Loading season…</p>
+        <p className="text-amber-500">Loading…</p>
       </div>
     );
   }
@@ -169,7 +169,7 @@ export default function SeasonView() {
   if (!season) {
     return (
       <div className="p-6">
-        <p className="text-red-400">{error || 'Season not found.'}</p>
+        <p className="text-red-400">{error || 'Fiscal year or practice run not found.'}</p>
       </div>
     );
   }
@@ -200,19 +200,19 @@ export default function SeasonView() {
                 to={`/leaderboard/season/${seasonId}`}
                 className="shrink-0 rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-sm text-amber-400 transition hover:border-amber-500/50 hover:bg-slate-700"
               >
-                Season standings
+                Fiscal year standings
               </Link>
             )}
           </div>
           <p className="mt-1 text-sm text-slate-400">
             Preset: <span className="text-slate-200">{season.scenario_preset}</span> ·{' '}
-            {season.total_rounds} rounds · {season.round_duration_days} days each ·{' '}
-            {season.contract_updates_allowed} contract updates allowed
+            {season.total_rounds} months · {season.round_duration_days} days each ·{' '}
+            {season.contract_updates_allowed} policy reviews allowed
           </p>
           <p className="mt-1 text-sm">
             Status:{' '}
             <span className={statusColor(season.status)}>{season.status}</span> ·{' '}
-            {scoredCount} of {season.total_rounds} rounds scored
+            {scoredCount} of {season.total_rounds} months scored
           </p>
         </div>
         {canManageSeason && (
@@ -224,7 +224,7 @@ export default function SeasonView() {
                 onClick={handleActivate}
                 className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400 disabled:opacity-50"
               >
-                {busy ? 'Starting…' : 'Start season'}
+                {busy ? 'Starting…' : isPrivateSoloSeason ? 'Start practice run' : 'Start fiscal year'}
               </button>
             )}
             {season.status === 'active' && (
@@ -234,7 +234,7 @@ export default function SeasonView() {
                 onClick={handleAdvance}
                 className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-slate-900 transition hover:bg-amber-400 disabled:opacity-50"
               >
-                {busy ? 'Advancing…' : `Score & advance (Round ${activeRound?.round_number ?? '?'})`}
+                {busy ? 'Advancing…' : `Score & advance (Month ${activeRound?.round_number ?? '?'})`}
               </button>
             )}
           </div>
@@ -267,7 +267,7 @@ export default function SeasonView() {
               </h2>
               <p className="mt-1 text-xs text-slate-500">
                 Watch for forecasts about upcoming months — they can help you decide when to spend a
-                contract change.
+                policy review.
               </p>
               <div className="mt-3">
                 <StoryNews
@@ -278,7 +278,7 @@ export default function SeasonView() {
                       : activeRound?.round_number ??
                         (season.status === 'completed' ? season.total_rounds : 0)
                   }
-                  emptyText="No news yet — check back once the season starts."
+                  emptyText="No news yet — check back once the fiscal year starts."
                 />
               </div>
             </div>
@@ -289,7 +289,7 @@ export default function SeasonView() {
       {!isProfessor && myState && (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-500">
-            Your contract updates
+            Your policy reviews
           </h2>
           <p className="mt-1 text-sm text-slate-300">
             <span className="font-mono text-amber-400">
@@ -301,18 +301,18 @@ export default function SeasonView() {
             <p className="mt-2 text-xs text-slate-400">
               {myState.active_round_number > 1
                 ? myState.active_round_unlocked
-                  ? 'This active round is unlocked for policy edits.'
+                  ? 'This active month is unlocked for policy edits.'
                   : myState.can_unlock_active_round
-                    ? 'Spend one contract update token in the policy editor to unlock edits this round.'
-                    : 'This round is locked and no contract updates remain.'
-                : 'Round 1 is always editable; later rounds are locked until you spend a contract update.'}
+                    ? 'Spend one policy review in the policy editor to unlock edits this month.'
+                    : 'This month is locked and no policy reviews remain.'
+                : 'Month 1 is always editable; later months are locked until you spend a policy review.'}
             </p>
           )}
         </div>
       )}
 
       <div>
-        <h2 className="mb-4 text-lg font-medium text-slate-100">Rounds</h2>
+        <h2 className="mb-4 text-lg font-medium text-slate-100">Months</h2>
         <ul className="space-y-3">
           {season.rounds.map((r) => (
             <li
@@ -328,12 +328,12 @@ export default function SeasonView() {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-semibold text-slate-100">
-                    Round {r.round_number}
+                    Month {r.round_number}
                     {r.locked_for_updates && r.status !== 'scored' && (
                       <span className="ml-2 rounded bg-slate-700 px-2 py-0.5 text-xs font-normal text-slate-400">
                         {r.status === 'active' && !isProfessor && myState?.active_round_id === r.id
                           ? myState.active_round_unlocked
-                            ? 'Unlocked this round'
+                            ? 'Unlocked this month'
                             : 'Locked (inherited)'
                           : 'Locked by default'}
                       </span>

@@ -40,6 +40,9 @@ from simulation.story_packages import (
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
+TYPICAL_MONTH_DAYS_MIN = 21
+TYPICAL_MONTH_DAYS_MAX = 35
+
 
 # ---------------------------------------------------------------------------
 # Schemas
@@ -144,7 +147,7 @@ def _ensure_member(db: Session, user: UserRow, room_id: str):
         .first()
     )
     if not member:
-        raise HTTPException(403, "Not a member of this room")
+        raise HTTPException(403, "Not a member of this classroom")
 
 
 def _ensure_season_access(db: Session, user: UserRow, season: SeasonRow):
@@ -340,17 +343,17 @@ def create_season(
     room = None
     if scope == "room":
         if not body.room_id:
-            raise HTTPException(400, "room_id required for room seasons")
+            raise HTTPException(400, "room_id required for classroom fiscal years")
         room = db.query(RoomRow).filter(RoomRow.id == body.room_id).first()
         if not room:
-            raise HTTPException(404, "Room not found")
+            raise HTTPException(404, "Classroom not found")
         if user.role == "professor":
             if room.professor_id != user.id:
-                raise HTTPException(403, "Not your room")
+                raise HTTPException(403, "Not your classroom")
         else:
             _ensure_member(db, user, room.id)
         if room.completed:
-            raise HTTPException(400, "This class is completed; no more seasons can be created")
+            raise HTTPException(400, "This class is completed; no more fiscal years can be created")
     elif scope != "sandbox":
         raise HTTPException(400, "season_scope must be room or sandbox")
     if scope == "sandbox":
@@ -382,6 +385,14 @@ def create_season(
         raise HTTPException(400, "contract_updates_allowed must be >= 0")
     if body.round_duration_days < 1:
         raise HTTPException(400, "round_duration_days must be >= 1")
+    if not body.story_package_id and (
+        body.round_duration_days < TYPICAL_MONTH_DAYS_MIN
+        or body.round_duration_days > TYPICAL_MONTH_DAYS_MAX
+    ):
+        raise HTTPException(
+            400,
+            f"Month length must be between {TYPICAL_MONTH_DAYS_MIN} and {TYPICAL_MONTH_DAYS_MAX} days",
+        )
 
     def _parse_iso_deadline(value: str) -> datetime:
         # Accept common JS ISO output with trailing Z.
@@ -636,7 +647,7 @@ def get_season(
 ):
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
-        raise HTTPException(404, "Season not found")
+        raise HTTPException(404, "Fiscal year not found")
     _ensure_season_access(db, user, season)
     rounds = (
         db.query(RoundRow)
@@ -655,7 +666,7 @@ def get_my_state(
 ):
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
-        raise HTTPException(404, "Season not found")
+        raise HTTPException(404, "Fiscal year not found")
     _ensure_season_access(db, user, season)
 
     state = (
@@ -722,17 +733,17 @@ def activate_season(
 ):
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
-        raise HTTPException(404, "Season not found")
+        raise HTTPException(404, "Fiscal year not found")
     if season.room_id:
         if user.role == "professor":
             if not _is_professor_of(db, user, season.room_id):
-                raise HTTPException(403, "Not your room")
+                raise HTTPException(403, "Not your classroom")
         else:
             _ensure_member(db, user, season.room_id)
     elif season.owner_user_id != user.id:
         raise HTTPException(403, "Not your season")
     if season.status != "draft":
-        raise HTTPException(400, f"Season is already {season.status}")
+        raise HTTPException(400, f"Fiscal year is already {season.status}")
 
     first = (
         db.query(RoundRow)
@@ -740,14 +751,14 @@ def activate_season(
         .first()
     )
     if not first:
-        raise HTTPException(500, "Season has no round 1")
+        raise HTTPException(500, "Fiscal year has no month 1")
 
     season.status = "active"
     first.status = "active"
     # Round 1 is always editable (initial contract).
     first.locked_for_updates = False
     db.commit()
-    return {"message": "Season activated", "active_round_id": first.id}
+    return {"message": "Fiscal year activated", "active_round_id": first.id}
 
 
 @router.post("/{season_id}/advance")
@@ -762,17 +773,17 @@ def advance_season(
 
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
-        raise HTTPException(404, "Season not found")
+        raise HTTPException(404, "Fiscal year not found")
     if season.room_id:
         if user.role == "professor":
             if not _is_professor_of(db, user, season.room_id):
-                raise HTTPException(403, "Not your room")
+                raise HTTPException(403, "Not your classroom")
         else:
             _ensure_member(db, user, season.room_id)
     elif season.owner_user_id != user.id:
         raise HTTPException(403, "Not your season")
     if season.status != "active":
-        raise HTTPException(400, f"Season is {season.status}")
+        raise HTTPException(400, f"Fiscal year is {season.status}")
 
     active = (
         db.query(RoundRow)
@@ -798,7 +809,7 @@ def advance_season(
     if next_round is None:
         season.status = "completed"
         db.commit()
-        return {"message": "Season complete", "season_status": "completed"}
+        return {"message": "Fiscal year complete", "season_status": "completed"}
 
     # Copy prior policies into the next round for all users by default.
     prev_policies = db.query(PolicyRow).filter(PolicyRow.round_id == active.id).all()
@@ -826,7 +837,7 @@ def advance_season(
     next_round.locked_for_updates = next_round.round_number > 1
     db.commit()
     return {
-        "message": "Advanced to next round",
+        "message": "Advanced to next month",
         "scored_round_id": active.id,
         "active_round_id": next_round.id,
     }
@@ -840,7 +851,7 @@ def undo_latest_advance(
 ):
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
-        raise HTTPException(404, "Season not found")
+        raise HTTPException(404, "Fiscal year not found")
     _ensure_season_access(db, user, season)
 
     # Only allow self-managed solo seasons to undo scoring.
@@ -849,7 +860,7 @@ def undo_latest_advance(
         and (season.season_scope == "sandbox" or season.source_template_id is not None)
     )
     if not is_solo_owner:
-        raise HTTPException(403, "Undo scoring is only available in your solo seasons")
+        raise HTTPException(403, "Undo scoring is only available in your practice runs")
 
     latest_scored = (
         db.query(RoundRow)
@@ -950,19 +961,19 @@ def unlock_round_edits(
 ):
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
-        raise HTTPException(404, "Round not found")
+        raise HTTPException(404, "Month not found")
     if not rnd.season_id:
         raise HTTPException(400, "This round is not part of a season")
     if rnd.season_id != season_id:
-        raise HTTPException(400, "Round does not belong to this season")
+        raise HTTPException(400, "Month does not belong to this fiscal year")
     if rnd.status != "active":
-        raise HTTPException(400, "Round is not active")
+        raise HTTPException(400, "Month is not active")
     if rnd.round_number <= 1:
-        raise HTTPException(400, "Round 1 is already editable")
+        raise HTTPException(400, "Month 1 is already editable")
 
     season = db.query(SeasonRow).filter(SeasonRow.id == season_id).first()
     if not season:
-        raise HTTPException(500, "Season missing")
+        raise HTTPException(500, "Fiscal year missing")
     _ensure_season_access(db, user, season)
 
     existing_unlock = (
@@ -976,7 +987,7 @@ def unlock_round_edits(
     if existing_unlock:
         state = _get_or_create_member_state(db, season, user)
         return {
-            "message": "Round already unlocked",
+            "message": "Month already unlocked",
             "round_id": rnd.id,
             "contract_updates_used": state.contract_updates_used,
             "contract_updates_remaining": max(
@@ -987,7 +998,7 @@ def unlock_round_edits(
 
     state = _get_or_create_member_state(db, season, user)
     if state.contract_updates_used >= season.contract_updates_allowed:
-        raise HTTPException(400, "No contract update tokens remaining")
+        raise HTTPException(400, "No policy reviews remaining")
 
     state.contract_updates_used += 1
     db.add(
@@ -999,7 +1010,7 @@ def unlock_round_edits(
     )
     db.commit()
     return {
-        "message": "Round unlocked for policy edits",
+        "message": "Month unlocked for policy edits",
         "round_id": rnd.id,
         "contract_updates_used": state.contract_updates_used,
         "contract_updates_remaining": max(
