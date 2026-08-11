@@ -104,6 +104,8 @@ class SeasonRow(Base):
     owner_user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     season_scope = Column(String, nullable=False, default="room")  # "room" | "sandbox"
     source_template_id = Column(String, ForeignKey("room_solo_templates.id"), nullable=True, index=True)
+    # True for seasons created via the practice-run builder (sandbox or classroom).
+    is_practice_run = Column(Boolean, nullable=False, default=False)
     name = Column(String, nullable=False)
     total_rounds = Column(Integer, nullable=False, default=20)
     contract_updates_allowed = Column(Integer, nullable=False, default=3)
@@ -367,6 +369,15 @@ def _migrate_schema():
                 alters.append("ALTER TABLE seasons ADD COLUMN news JSON NOT NULL DEFAULT '[]'")
             else:
                 alters.append("ALTER TABLE seasons ADD COLUMN news JSONB NOT NULL DEFAULT '[]'::jsonb")
+        if "is_practice_run" not in season_cols:
+            if is_sqlite:
+                alters.append(
+                    "ALTER TABLE seasons ADD COLUMN is_practice_run BOOLEAN NOT NULL DEFAULT 0"
+                )
+            else:
+                alters.append(
+                    "ALTER TABLE seasons ADD COLUMN is_practice_run BOOLEAN NOT NULL DEFAULT FALSE"
+                )
         if alters:
             with engine.begin() as conn:
                 for stmt in alters:

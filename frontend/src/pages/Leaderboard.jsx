@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -79,12 +79,7 @@ export default function Leaderboard() {
   const navigate = useNavigate();
   const roundId = params.roundId;
   const seasonIdParam = params.seasonId;
-  const roomIdParam = params.roomId;
-  const templateIdParam = params.templateId;
-  const isCohortRoute = Boolean(roomIdParam && templateIdParam);
-
-  /** Season route is `/leaderboard/season/:seasonId`. Cohort: `/leaderboard/room/.../template/.../cohort`. */
-  const isSeasonRoute = Boolean(seasonIdParam) && !isCohortRoute;
+  const isSeasonRoute = Boolean(seasonIdParam);
 
   const [roundRows, setRoundRows] = useState(null);
   const [seasonPayload, setSeasonPayload] = useState(null);
@@ -92,53 +87,21 @@ export default function Leaderboard() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [unavailableNonClassSolo, setUnavailableNonClassSolo] = useState(false);
-  const [cohortRoomName, setCohortRoomName] = useState(null);
   const [seasonLeaderTitle, setSeasonLeaderTitle] = useState(null);
   const [roundLeaderTitle, setRoundLeaderTitle] = useState(null);
 
   const me = getUser();
 
-  useEffect(() => {
-    if (!isCohortRoute || !roomIdParam) {
-      setCohortRoomName(null);
-      return;
-    }
-    let cancelled = false;
-    api
-      .getRooms()
-      .then((list) => {
-        const found = list.find((r) => r.id === roomIdParam);
-        if (!cancelled) setCohortRoomName(found?.name ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setCohortRoomName(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isCohortRoute, roomIdParam]);
-
   const breadcrumbLeaderboard = useMemo(() => {
     const labels = {};
-    if (isCohortRoute && cohortRoomName) labels.room = cohortRoomName;
-    if (isCohortRoute && seasonPayload?.template_name) {
-      labels.leaderboardLeaf = `${seasonPayload.template_name} · Cohort`;
-    } else if (isSeasonRoute && seasonLeaderTitle) {
+    if (isSeasonRoute && seasonLeaderTitle) {
       labels.leaderboardLeaf = seasonLeaderTitle;
     }
-    if (roundId && !isSeasonRoute && !isCohortRoute && roundLeaderTitle) {
+    if (roundId && !isSeasonRoute && roundLeaderTitle) {
       labels.leaderboardRound = roundLeaderTitle;
     }
     return { labels, afterDashboard: [] };
-  }, [
-    isCohortRoute,
-    isSeasonRoute,
-    roundId,
-    cohortRoomName,
-    seasonPayload?.template_name,
-    seasonLeaderTitle,
-    roundLeaderTitle,
-  ]);
+  }, [isSeasonRoute, roundId, seasonLeaderTitle, roundLeaderTitle]);
 
   useBreadcrumbLabels(breadcrumbLeaderboard);
 
@@ -151,14 +114,7 @@ export default function Leaderboard() {
       setSeasonLeaderTitle(null);
       setRoundLeaderTitle(null);
       try {
-        if (isCohortRoute && roomIdParam && templateIdParam) {
-          const s = await api.getTemplateCohortLeaderboard(roomIdParam, templateIdParam);
-          if (!cancelled) {
-            setSeasonPayload(s);
-            setRoundRows(null);
-            setSeasonIdFromRound(null);
-          }
-        } else if (isSeasonRoute && seasonIdParam) {
+        if (isSeasonRoute && seasonIdParam) {
           const meta = await api.getSeason(seasonIdParam);
           if (!cancelled) setSeasonLeaderTitle(meta?.name ?? null);
           if (meta?.season_scope === 'sandbox') {
@@ -223,7 +179,7 @@ export default function Leaderboard() {
     return () => {
       cancelled = true;
     };
-  }, [roundId, seasonIdParam, isSeasonRoute, isCohortRoute, roomIdParam, templateIdParam]);
+  }, [roundId, seasonIdParam, isSeasonRoute]);
 
   const defaultRoundIdFromSeason = useMemo(() => {
     const rounds = seasonPayload?.rounds;
@@ -232,7 +188,7 @@ export default function Leaderboard() {
   }, [seasonPayload]);
 
   const seasonColumns = seasonPayload?.rounds ?? [];
-  const isCohortPayload = seasonPayload?.cohort === true;
+  const isCohortPayload = false;
 
   const goRoundTab = () => {
     if (roundId && !isSeasonRoute) {
@@ -255,21 +211,10 @@ export default function Leaderboard() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold text-slate-100">
-              {isCohortRoute ? 'Template cohort standings' : 'Leaderboard'}
+              Leaderboard
             </h1>
-            {isCohortRoute && roomIdParam && (
-              <Link
-                to={`/room/${roomIdParam}`}
-                className="mt-1 block text-sm text-amber-500/90 hover:text-amber-400"
-              >
-                ← Back to classroom
-              </Link>
-            )}
-            {isCohortPayload && seasonPayload?.template_name && (
-              <p className="mt-1 text-sm text-slate-400">{seasonPayload.template_name}</p>
-            )}
           </div>
-          {!isCohortRoute && !unavailableNonClassSolo && (
+          {!unavailableNonClassSolo && (
             <div className="flex gap-2">
               <TabButton
                 active={!isSeasonRoute}
@@ -349,7 +294,7 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {!loading && !error && !unavailableNonClassSolo && (isCohortRoute || isSeasonRoute) && seasonPayload && (
+        {!loading && !error && !unavailableNonClassSolo && isSeasonRoute && seasonPayload && (
           <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800 shadow-lg">
             {seasonColumns.length === 0 ? (
               <p className="p-6 text-slate-400">

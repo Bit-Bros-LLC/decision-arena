@@ -73,31 +73,43 @@ j3 = requests.post(f"{BASE}/rooms/join",
 assert j3.get("room_id") == room["id"], f"invite-only join failed: {j3}"
 p("Student 3 joined (invite code only)", j3)
 
-# --- 4. Professor creates a round ---
-print("\n" + "="*60 + "\n STEP 4: Create Round\n" + "="*60)
+# --- 4. Professor creates a fiscal year (1 month) ---
+print("\n" + "="*60 + "\n STEP 4: Create Fiscal Year\n" + "="*60)
 
-historical = [{"day": i, "demand": 90 + (i*7 % 30), "lead_time": 2 + (i % 3), "black_swan": None} for i in range(1, 61)]
-actuals = [{"day": i, "demand": 100 + (i*11 % 40), "lead_time": 2 + (i % 4), "black_swan": None} for i in range(1, 31)]
-actuals[13]["black_swan"] = {"type": "supplier_failure", "duration_days": 3}
-actuals[24]["demand"] = 250  # demand spike
+COSTS = {
+    "holding_per_unit": 1.0, "stockout_penalty": 10.0,
+    "ordering_fixed": 20.0, "per_unit_cost": 5.0,
+    "selling_price": 15.0,
+    "dual_source_enabled": True,
+    "dual_source_premium_per_unit": 2.0,
+    "dual_source_rescue_pct": 1.0,
+}
 
-rnd = requests.post(f"{BASE}/rounds", json={
+fy = requests.post(f"{BASE}/seasons", json={
     "room_id": room["id"],
-    "round_number": 1,
-    "historical_data": historical,
-    "actual_data": actuals,
-    "costs": {
-        "holding_per_unit": 1.0, "stockout_penalty": 10.0,
-        "ordering_fixed": 20.0, "per_unit_cost": 5.0,
-        "selling_price": 15.0,
-        "dual_source_enabled": True,
-        "dual_source_premium_per_unit": 2.0,
-        "dual_source_rescue_pct": 1.0,
-    },
+    "name": "API fiscal year loop",
+    "total_rounds": 1,
+    "contract_updates_allowed": 0,
+    "round_duration_days": 30,
+    "historical_leadin_days": 60,
+    "scenario_preset": "steady",
+    "scenario_config": {},
+    "season_mode": "single",
+    "mix_config": {},
+    "costs": COSTS,
     "starting_inventory": 100,
-    "deadline": "2026-04-15T23:59:00"
+    "season_scope": "room",
 }, headers={"Authorization": f"Bearer {prof_token}"}).json()
-p("Round created", rnd)
+p("Fiscal year created", fy)
+assert fy.get("id"), fy
+assert fy.get("is_practice_run") is False
+season_loop_id = fy["id"]
+rnd = fy["rounds"][0]
+
+requests.post(
+    f"{BASE}/seasons/{season_loop_id}/activate",
+    headers={"Authorization": f"Bearer {prof_token}"},
+).raise_for_status()
 
 # --- 5. Student sees round (actuals hidden) ---
 print("\n" + "="*60 + "\n STEP 5: Student Views Round (actuals hidden?)\n" + "="*60)
@@ -136,12 +148,12 @@ print(f"Service level: {bt['service_level']:.1%}")
 print(f"Stockout days: {bt['stockout_days']}")
 print(f"Highlights: {bt['highlights'][:3]}")
 
-# --- 8. Professor scores the round ---
-print("\n" + "="*60 + "\n STEP 8: Score Round\n" + "="*60)
+# --- 8. Professor advances (scores) the fiscal year month ---
+print("\n" + "="*60 + "\n STEP 8: Advance Fiscal Year\n" + "="*60)
 
-score = requests.post(f"{BASE}/rounds/{rnd['id']}/score",
+score = requests.post(f"{BASE}/seasons/{season_loop_id}/advance",
     headers={"Authorization": f"Bearer {prof_token}"}).json()
-p("Scoring", score)
+p("Advance", score)
 
 # --- 9. Check leaderboard ---
 print("\n" + "="*60 + "\n STEP 9: Leaderboard\n" + "="*60)
@@ -182,16 +194,7 @@ sea = requests.post(
         "scenario_config": {},
         "season_mode": "single",
         "mix_config": {},
-        "costs": {
-            "holding_per_unit": 1.0,
-            "stockout_penalty": 10.0,
-            "ordering_fixed": 20.0,
-            "per_unit_cost": 5.0,
-            "selling_price": 15.0,
-            "dual_source_enabled": True,
-            "dual_source_premium_per_unit": 2.0,
-            "dual_source_rescue_pct": 1.0,
-        },
+        "costs": COSTS,
         "starting_inventory": 100,
         "season_scope": "room",
     },
@@ -255,154 +258,97 @@ for st in season_prof["standings"]:
     assert st.get("user_id"), "Professor should see all user_ids on season standings"
     assert st.get("display_name") != "Other player"
 
-# --- 12. Template cohort (two "Start my run" copies, one cohort table) ---
-print("\n" + "="*60 + "\n STEP 12: Template cohort standings\n" + "="*60)
+# --- 12. Classroom practice runs (visibility) ---
+print("\n" + "="*60 + "\n STEP 12: Classroom practice runs\n" + "="*60)
 
-COSTS = {
-    "holding_per_unit": 1.0,
-    "stockout_penalty": 10.0,
-    "ordering_fixed": 20.0,
-    "per_unit_cost": 5.0,
-    "selling_price": 15.0,
-    "dual_source_enabled": True,
-    "dual_source_premium_per_unit": 2.0,
-    "dual_source_rescue_pct": 1.0,
-}
-
-tpl = requests.post(
+gone = requests.post(
     f"{BASE}/seasons/room/{room['id']}/solo-templates",
+    json={"name": "should fail", "costs": COSTS},
+    headers={"Authorization": f"Bearer {prof_token}"},
+)
+assert gone.status_code == 410, gone.text
+
+adhoc_gone = requests.post(
+    f"{BASE}/rounds",
     json={
-        "name": "Cohort test template",
-        "season_mode": "single",
+        "room_id": room["id"],
+        "historical_data": [{"day": 1, "demand": 10, "lead_time": 2, "black_swan": None}],
+        "actual_data": [{"day": 1, "demand": 10, "lead_time": 2, "black_swan": None}],
+        "costs": COSTS,
+        "starting_inventory": 100,
+        "deadline": "2026-04-15T23:59:00",
+    },
+    headers={"Authorization": f"Bearer {prof_token}"},
+)
+assert adhoc_gone.status_code == 410, adhoc_gone.text
+
+pr1 = requests.post(
+    f"{BASE}/seasons",
+    json={
+        "room_id": room["id"],
+        "name": "Student 1 practice",
         "total_rounds": 1,
         "contract_updates_allowed": 0,
         "round_duration_days": 30,
         "historical_leadin_days": 60,
         "scenario_preset": "steady",
         "scenario_config": {},
+        "season_mode": "single",
         "mix_config": {},
         "costs": COSTS,
         "starting_inventory": 100,
-        "is_published": True,
-        "scenario_seed": 99,
+        "season_scope": "room",
+        "is_practice_run": True,
     },
-    headers={"Authorization": f"Bearer {prof_token}"},
-).json()
-p("Published template for cohort", tpl)
-template_id = tpl["id"]
-assert template_id
-
-sea1 = requests.post(
-    f"{BASE}/seasons/room/{room['id']}/solo-templates/{template_id}/instantiate",
     headers={"Authorization": f"Bearer {s1_token}"},
 ).json()
-sea2 = requests.post(
-    f"{BASE}/seasons/room/{room['id']}/solo-templates/{template_id}/instantiate",
+p("Student 1 practice run", pr1)
+assert pr1.get("is_practice_run") is True
+assert pr1["rounds"][0]["status"] == "active"
+
+pr2 = requests.post(
+    f"{BASE}/seasons",
+    json={
+        "room_id": room["id"],
+        "name": "Student 2 practice",
+        "total_rounds": 1,
+        "contract_updates_allowed": 0,
+        "round_duration_days": 30,
+        "historical_leadin_days": 60,
+        "scenario_preset": "steady",
+        "scenario_config": {},
+        "season_mode": "single",
+        "mix_config": {},
+        "costs": COSTS,
+        "starting_inventory": 100,
+        "season_scope": "room",
+        "is_practice_run": True,
+    },
     headers={"Authorization": f"Bearer {s2_token}"},
 ).json()
-tr1 = sea1["rounds"][0]["id"]
-tr2 = sea2["rounds"][0]["id"]
-
-requests.put(
-    f"{BASE}/policies",
-    json={
-        "round_id": tr1,
-        "policy_type": "order_up_to",
-        "config": {"target_level": 200, "dual_source": False},
-    },
-    headers={"Authorization": f"Bearer {s1_token}"},
-).raise_for_status()
-requests.put(
-    f"{BASE}/policies",
-    json={
-        "round_id": tr2,
-        "policy_type": "service_level",
-        "config": {
-            "target_service_level": 0.95,
-            "lookback_days": 14,
-            "dual_source": True,
-        },
-    },
-    headers={"Authorization": f"Bearer {s2_token}"},
-).raise_for_status()
-
-requests.post(
-    f"{BASE}/seasons/{sea1['id']}/advance",
-    headers={"Authorization": f"Bearer {prof_token}"},
-).raise_for_status()
-requests.post(
-    f"{BASE}/seasons/{sea2['id']}/advance",
-    headers={"Authorization": f"Bearer {prof_token}"},
-).raise_for_status()
-
-coh = requests.get(
-    f"{BASE}/leaderboard/room/{room['id']}/template/{template_id}/cohort",
-    headers={"Authorization": f"Bearer {s1_token}"},
-).json()
-p("Cohort (student 1 view)", coh["standings"])
-assert coh.get("cohort") is True
-assert len(coh["standings"]) == 2
-for st in coh["standings"]:
-    if st.get("is_me"):
-        assert st.get("user_id")
-    else:
-        assert st.get("display_name") == "Other player"
-        assert "user_id" not in st
-for st in coh["standings"]:
-    assert "per_round" in st and st["per_round"]
-
-coh_p = requests.get(
-    f"{BASE}/leaderboard/room/{room['id']}/template/{template_id}/cohort",
-    headers={"Authorization": f"Bearer {prof_token}"},
-).json()
-for st in coh_p["standings"]:
-    assert st.get("user_id")
-    assert st.get("display_name") != "Other player"
-
-# --- 13. List room seasons: only your template runs; attempt 1/2 for repeats ---
-print("\n" + "="*60 + "\n STEP 13: Room seasons list (per-user sprints)\n" + "="*60)
+assert pr2.get("is_practice_run") is True
 
 list_s1 = requests.get(
     f"{BASE}/seasons/room/{room['id']}",
     headers={"Authorization": f"Bearer {s1_token}"},
 ).json()
-p("Student 1 room seasons (fragment)", list_s1[:3] if len(list_s1) > 3 else list_s1)
-sprint_for_s1 = [x for x in list_s1 if x.get("source_template_id") == template_id]
-assert len(sprint_for_s1) == 1, f"expected 1 template season for s1, got {len(sprint_for_s1)}"
-assert sprint_for_s1[0]["id"] == sea1["id"]
-assert sprint_for_s1[0].get("template_name") == "Cohort test template"
-assert sprint_for_s1[0].get("sprint_attempt") == 1
-for x in list_s1:
-    if not x.get("source_template_id"):
-        assert x.get("sprint_attempt") is None and x.get("template_name") is None
+ids_s1 = {x["id"] for x in list_s1}
+assert pr1["id"] in ids_s1
+assert pr2["id"] not in ids_s1
+assert season_loop_id in ids_s1  # shared fiscal year visible
 
-list_s2 = requests.get(
+list_prof = requests.get(
     f"{BASE}/seasons/room/{room['id']}",
-    headers={"Authorization": f"Bearer {s2_token}"},
+    headers={"Authorization": f"Bearer {prof_token}"},
 ).json()
-sprint_for_s2 = [x for x in list_s2 if x.get("source_template_id") == template_id]
-assert len(sprint_for_s2) == 1
-assert sprint_for_s2[0]["id"] == sea2["id"]
-assert sprint_for_s2[0].get("sprint_attempt") == 1
-# Student 1 must not see student 2's season in the list
-assert sea2["id"] not in {x["id"] for x in list_s1}
-assert sea1["id"] not in {x["id"] for x in list_s2}
+ids_prof = {x["id"] for x in list_prof}
+assert pr1["id"] in ids_prof and pr2["id"] in ids_prof
 
-sea1_attempt2 = requests.post(
-    f"{BASE}/seasons/room/{room['id']}/solo-templates/{template_id}/instantiate",
+my_solo = requests.get(
+    f"{BASE}/seasons/my-solo",
     headers={"Authorization": f"Bearer {s1_token}"},
 ).json()
-list_s1_two = requests.get(
-    f"{BASE}/seasons/room/{room['id']}",
-    headers={"Authorization": f"Bearer {s1_token}"},
-).json()
-sprints_s1_both = [x for x in list_s1_two if x.get("source_template_id") == template_id]
-assert len(sprints_s1_both) == 2
-by_att = {x["sprint_attempt"]: x["id"] for x in sprints_s1_both}
-assert by_att[1] == sea1["id"]
-assert by_att[2] == sea1_attempt2["id"]
-for x in sprints_s1_both:
-    assert x.get("template_name") == "Cohort test template"
+assert any(x["id"] == pr1["id"] for x in my_solo)
 
 # --- Onboarding status ---
 print("\n" + "="*60 + "\n Onboarding status\n" + "="*60)
@@ -414,6 +360,7 @@ onboarding_s1 = requests.get(
 p("Student onboarding status", onboarding_s1)
 assert onboarding_s1["has_policy_submission"] is True
 assert onboarding_s1["has_class_room"] is True
+assert onboarding_s1["has_solo_season"] is True
 
 onboarding_prof = requests.get(
     f"{BASE}/users/me/onboarding-status",

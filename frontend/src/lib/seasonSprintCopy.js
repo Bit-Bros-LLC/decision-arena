@@ -20,9 +20,4 @@ export const SEASON_SPRINT_COPY = {
     'Fine-tune costs, lead-in history, starting inventory, month length, and preset tuning. Most players can leave these at defaults.',
   dualSourceDefaultsHint:
     'Defaults: $2/unit premium, 100% supplier rescue. Change these in Advanced users.',
-  templateName: 'Students will see this name when they start their own copy of your case study.',
-  templateNamePlaceholder: 'e.g. Week 3 practice sprint',
-  templateMode:
-    'Random mix gives each student varied months; custom mix uses a fixed sequence you define when publishing.',
-  templateHelper: 'Students run their own private copy from this case study.',
 };

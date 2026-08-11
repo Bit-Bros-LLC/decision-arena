@@ -108,7 +108,9 @@ export default function SeasonView() {
   const handleAdvance = async () => {
     const isSoloOwnerSeason =
       season?.owner_user_id === user?.user_id &&
-      (season?.season_scope === 'sandbox' || Boolean(season?.source_template_id));
+      (Boolean(season?.is_practice_run) ||
+        season?.season_scope === 'sandbox' ||
+        Boolean(season?.source_template_id));
 
     if (isSoloOwnerSeason && activeRound?.id) {
       let hasPolicy = false;
@@ -181,11 +183,11 @@ export default function SeasonView() {
     .reduce((max, r) => Math.max(max, Number(r.round_number) || 0), 0);
   const isPrivateSoloSeason = season.season_scope === 'sandbox';
   const isClassSeason = season.season_scope === 'room';
-  const canManageSeason = isProfessor || isPrivateSoloSeason;
-  const canUndoLatestSoloScore =
-    season.owner_user_id === user?.user_id &&
-    (season.season_scope === 'sandbox' || Boolean(season.source_template_id)) &&
-    latestScoredRoundNumber > 0;
+  const isPracticeRun =
+    Boolean(season.is_practice_run) || isPrivateSoloSeason || Boolean(season.source_template_id);
+  const isSoloOwner = season.owner_user_id === user?.user_id && isPracticeRun;
+  const canManageSeason = isProfessor || isSoloOwner;
+  const canUndoLatestSoloScore = isSoloOwner && latestScoredRoundNumber > 0;
 
   return (
     <div className="space-y-6">

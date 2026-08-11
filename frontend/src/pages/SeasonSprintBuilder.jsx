@@ -268,6 +268,7 @@ export default function SeasonSprintBuilder() {
       const res = await api.createSeason({
         room_id: inRoom ? roomId : null,
         season_scope: inRoom ? 'room' : 'sandbox',
+        is_practice_run: true,
         name: trimmedName,
         scenario_preset: basePreset,
         scenario_config: configPayload,

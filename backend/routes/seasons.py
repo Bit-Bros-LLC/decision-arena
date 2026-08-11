@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import secrets
-from collections import defaultdict
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -18,7 +17,6 @@ from database import (
     ResultRow,
     RoomMemberRow,
     RoomRow,
-    RoomSoloTemplateRow,
     RoundRow,
     SeasonMemberStateRow,
     SeasonRow,
@@ -65,6 +63,7 @@ class CreateSeasonRequest(BaseModel):
     mix_config: dict = {}
     season_scope: str = "room"
     source_template_id: Optional[str] = None
+    is_practice_run: bool = False
     seed: Optional[int] = None
     story_package_id: Optional[str] = None
 
@@ -110,6 +109,7 @@ class SeasonResponse(BaseModel):
     owner_user_id: str | None
     season_scope: str
     source_template_id: str | None
+    is_practice_run: bool = False
     name: str
     scenario_preset: str
     scenario_config: dict
@@ -158,26 +158,6 @@ def _ensure_season_access(db: Session, user: UserRow, season: SeasonRow):
         raise HTTPException(403, "Not your season")
 
 
-def _template_to_dict(row: RoomSoloTemplateRow) -> dict:
-    return {
-        "id": row.id,
-        "room_id": row.room_id,
-        "name": row.name,
-        "season_mode": row.season_mode,
-        "total_rounds": row.total_rounds,
-        "contract_updates_allowed": row.contract_updates_allowed,
-        "round_duration_days": row.round_duration_days,
-        "historical_leadin_days": row.historical_leadin_days,
-        "scenario_preset": row.scenario_preset,
-        "scenario_config": row.scenario_config or {},
-        "mix_config": row.mix_config or {},
-        "costs": row.costs,
-        "starting_inventory": row.starting_inventory,
-        "is_published": bool(row.is_published),
-        "scenario_seed": row.scenario_seed,
-    }
-
-
 def _get_or_create_private_sandbox_room(db: Session, user: UserRow) -> RoomRow:
     sandbox_name = f"__sandbox__{user.id}"
     room = db.query(RoomRow).filter(RoomRow.name == sandbox_name).first()
@@ -211,6 +191,8 @@ def _season_to_response(season: SeasonRow, rounds: list[RoundRow]) -> dict:
         "owner_user_id": season.owner_user_id,
         "season_scope": season.season_scope,
         "source_template_id": season.source_template_id,
+        "is_practice_run": bool(getattr(season, "is_practice_run", False))
+        or season.season_scope == "sandbox",
         "name": season.name,
         "scenario_preset": season.scenario_preset,
         "scenario_config": season.scenario_config or {},
@@ -237,6 +219,14 @@ def _season_to_response(season: SeasonRow, rounds: list[RoundRow]) -> dict:
             for r in sorted(rounds, key=lambda x: x.round_number)
         ],
     }
+
+
+def _is_practice_season(season: SeasonRow) -> bool:
+    return bool(getattr(season, "is_practice_run", False)) or season.season_scope == "sandbox"
+
+
+def _is_solo_owner(season: SeasonRow, user: UserRow) -> bool:
+    return season.owner_user_id == user.id and _is_practice_season(season)
 
 
 def _get_or_create_member_state(
@@ -360,6 +350,8 @@ def create_season(
         room = _get_or_create_private_sandbox_room(db, user)
         body.room_id = room.id
 
+    is_practice_run = bool(body.is_practice_run) or scope == "sandbox"
+
     # A story package pre-selects every mechanical setting (rounds, contract
     # updates, duration, lead-in, inventory, costs) and ships a frozen timeline
     # plus narrative + news. Professor-provided values are overridden by the
@@ -438,6 +430,7 @@ def create_season(
         owner_user_id=user.id,
         season_scope=scope,
         source_template_id=body.source_template_id,
+        is_practice_run=is_practice_run,
         name=body.name,
         total_rounds=body.total_rounds,
         contract_updates_allowed=body.contract_updates_allowed,
@@ -478,7 +471,10 @@ def create_season(
         rounds.append(rnd)
 
     auto_start = bool(
-        scope == "sandbox" or body.source_template_id is not None or user.role != "professor"
+        is_practice_run
+        or scope == "sandbox"
+        or body.source_template_id is not None
+        or user.role != "professor"
     )
     if auto_start and rounds:
         season.status = "active"
@@ -499,40 +495,22 @@ def list_room_seasons(
     db: Session = Depends(get_db),
 ):
     _ensure_member(db, user, room_id)
+    is_prof = _is_professor_of(db, user, room_id)
     seasons = (
         db.query(SeasonRow)
         .filter(SeasonRow.room_id == room_id, SeasonRow.season_scope == "room")
         .order_by(SeasonRow.created_at.desc())
         .all()
     )
-    # Template ("Season Sprint") runs are private: only the owner lists them; shared
-    # room seasons without a template stay visible to all members.
-    visible = [
-        s
-        for s in seasons
-        if s.source_template_id is None or s.owner_user_id == user.id
-    ]
-    template_seasons = [s for s in visible if s.source_template_id]
-    by_group: dict[tuple[str, str], list[SeasonRow]] = defaultdict(list)
-    for s in template_seasons:
-        by_group[(s.owner_user_id or "", s.source_template_id or "")].append(s)
-    attempt_by_id: dict[str, int] = {}
-    for _key, group in by_group.items():
-        ordered = sorted(
-            group,
-            key=lambda x: (x.created_at or datetime.min, x.id),
-        )
-        for i, s in enumerate(ordered, 1):
-            attempt_by_id[s.id] = i
-    tids = {s.source_template_id for s in template_seasons if s.source_template_id}
-    name_by_tid: dict[str, str] = {}
-    if tids:
-        for trow in (
-            db.query(RoomSoloTemplateRow)
-            .filter(RoomSoloTemplateRow.id.in_(tids))
-            .all()
-        ):
-            name_by_tid[trow.id] = trow.name
+    # Fiscal years are shared with all members. Practice runs are visible to the
+    # owner and the room professor only. Legacy template instances stay owner-only.
+    visible = []
+    for s in seasons:
+        practice = _is_practice_season(s) or s.source_template_id is not None
+        if not practice:
+            visible.append(s)
+        elif is_prof or s.owner_user_id == user.id:
+            visible.append(s)
 
     out: list[dict] = []
     for s in visible:
@@ -542,14 +520,7 @@ def list_room_seasons(
             .order_by(RoundRow.round_number)
             .all()
         )
-        row = _season_to_response(s, rounds)
-        if s.source_template_id:
-            row["sprint_attempt"] = attempt_by_id.get(s.id, 1)
-            row["template_name"] = name_by_tid.get(s.source_template_id)
-        else:
-            row["sprint_attempt"] = None
-            row["template_name"] = None
-        out.append(row)
+        out.append(_season_to_response(s, rounds))
     return out
 
 
@@ -585,32 +556,13 @@ def list_my_solo_seasons(
         db.query(SeasonRow)
         .filter(
             SeasonRow.owner_user_id == user.id,
-            (SeasonRow.season_scope == "sandbox") | (SeasonRow.source_template_id.isnot(None)),
+            (SeasonRow.season_scope == "sandbox")
+            | (SeasonRow.is_practice_run == True)  # noqa: E712
+            | (SeasonRow.source_template_id.isnot(None)),
         )
         .order_by(SeasonRow.created_at.desc())
         .all()
     )
-    template_seasons = [s for s in seasons if s.source_template_id]
-    by_group: dict[tuple[str, str], list[SeasonRow]] = defaultdict(list)
-    for s in template_seasons:
-        by_group[(s.room_id or "", s.source_template_id or "")].append(s)
-    attempt_by_id: dict[str, int] = {}
-    for _key, group in by_group.items():
-        ordered = sorted(
-            group,
-            key=lambda x: (x.created_at or datetime.min, x.id),
-        )
-        for i, s in enumerate(ordered, 1):
-            attempt_by_id[s.id] = i
-    tids = {s.source_template_id for s in template_seasons if s.source_template_id}
-    name_by_tid: dict[str, str] = {}
-    if tids:
-        for trow in (
-            db.query(RoomSoloTemplateRow)
-            .filter(RoomSoloTemplateRow.id.in_(tids))
-            .all()
-        ):
-            name_by_tid[trow.id] = trow.name
     rids = {s.room_id for s in seasons if s.room_id}
     room_name_by_id: dict[str, str] = {}
     if rids:
@@ -628,12 +580,8 @@ def list_my_solo_seasons(
         row["open_path"] = (
             f"/room/{s.room_id}/season/{s.id}" if s.room_id else f"/season-sprint/{s.id}"
         )
-        if s.source_template_id:
-            row["sprint_attempt"] = attempt_by_id.get(s.id, 1)
-            row["template_name"] = name_by_tid.get(s.source_template_id)
-        else:
-            row["sprint_attempt"] = None
-            row["template_name"] = None
+        row["sprint_attempt"] = None
+        row["template_name"] = None
         row["room_name"] = room_name_by_id.get(s.room_id) if s.room_id else None
         out.append(row)
     return out
@@ -854,12 +802,8 @@ def undo_latest_advance(
         raise HTTPException(404, "Fiscal year not found")
     _ensure_season_access(db, user, season)
 
-    # Only allow self-managed solo seasons to undo scoring.
-    is_solo_owner = (
-        season.owner_user_id == user.id
-        and (season.season_scope == "sandbox" or season.source_template_id is not None)
-    )
-    if not is_solo_owner:
+    # Only allow self-managed practice runs to undo scoring.
+    if not _is_solo_owner(season, user):
         raise HTTPException(403, "Undo scoring is only available in your practice runs")
 
     latest_scored = (
@@ -1025,12 +969,10 @@ def list_room_solo_templates(
     user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _ensure_member(db, user, room_id)
-    q = db.query(RoomSoloTemplateRow).filter(RoomSoloTemplateRow.room_id == room_id)
-    if user.role != "professor":
-        q = q.filter(RoomSoloTemplateRow.is_published == True)
-    rows = q.order_by(RoomSoloTemplateRow.created_at.desc()).all()
-    return [_template_to_dict(r) for r in rows]
+    raise HTTPException(
+        410,
+        "Case studies have been removed. Use classroom practice runs instead.",
+    )
 
 
 @router.post("/room/{room_id}/solo-templates")
@@ -1040,29 +982,10 @@ def create_room_solo_template(
     user: UserRow = Depends(require_professor),
     db: Session = Depends(get_db),
 ):
-    if not _is_professor_of(db, user, room_id):
-        raise HTTPException(403, "Not your room")
-    row = RoomSoloTemplateRow(
-        room_id=room_id,
-        name=body.name,
-        season_mode=body.season_mode,
-        total_rounds=body.total_rounds,
-        contract_updates_allowed=body.contract_updates_allowed,
-        round_duration_days=body.round_duration_days,
-        historical_leadin_days=body.historical_leadin_days,
-        scenario_preset=body.scenario_preset,
-        scenario_config=body.scenario_config or {},
-        mix_config=body.mix_config or {},
-        costs=body.costs,
-        starting_inventory=body.starting_inventory,
-        is_published=body.is_published,
-        scenario_seed=body.scenario_seed,
-        created_by=user.id,
+    raise HTTPException(
+        410,
+        "Case studies have been removed. Use classroom practice runs instead.",
     )
-    db.add(row)
-    db.commit()
-    db.refresh(row)
-    return _template_to_dict(row)
 
 
 @router.post("/room/{room_id}/solo-templates/{template_id}/instantiate", response_model=SeasonResponse)
@@ -1072,33 +995,7 @@ def instantiate_room_solo_template(
     user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    _ensure_member(db, user, room_id)
-    template = (
-        db.query(RoomSoloTemplateRow)
-        .filter(RoomSoloTemplateRow.id == template_id, RoomSoloTemplateRow.room_id == room_id)
-        .first()
+    raise HTTPException(
+        410,
+        "Case studies have been removed. Use classroom practice runs instead.",
     )
-    if not template:
-        raise HTTPException(404, "Template not found")
-    if not template.is_published and not _is_professor_of(db, user, room_id):
-        raise HTTPException(403, "Template not published")
-    seed = template.scenario_seed if template.scenario_seed is not None else 42
-    body = CreateSeasonRequest(
-        room_id=room_id,
-        name=f"{template.name} · {user.display_name}",
-        scenario_preset=template.scenario_preset,
-        scenario_config=template.scenario_config or {},
-        costs=template.costs,
-        starting_inventory=template.starting_inventory,
-        total_rounds=template.total_rounds,
-        contract_updates_allowed=template.contract_updates_allowed,
-        round_duration_days=template.round_duration_days,
-        historical_leadin_days=template.historical_leadin_days,
-        first_round_deadline=datetime.now().isoformat(),
-        season_mode=template.season_mode,
-        mix_config=template.mix_config or {},
-        season_scope="room",
-        source_template_id=template.id,
-        seed=seed,
-    )
-    return create_season(body=body, user=user, db=db)

@@ -595,7 +595,9 @@ export default function PolicyEditor() {
     roundActive &&
     Boolean(seasonMeta?.owner_user_id) &&
     seasonMeta.owner_user_id === user?.user_id &&
-    (seasonMeta?.season_scope === 'sandbox' || Boolean(seasonMeta?.source_template_id));
+    (Boolean(seasonMeta?.is_practice_run) ||
+      seasonMeta?.season_scope === 'sandbox' ||
+      Boolean(seasonMeta?.source_template_id));
 
   const submitNextSteps = (() => {
     if (!hasSubmittedPolicy) return null;
