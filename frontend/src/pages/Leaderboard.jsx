@@ -25,11 +25,13 @@ function profitClass(v) {
 }
 
 function MiniProfitSpark({ values, unitLabel = 'Day' }) {
-  const nums = (values || []).filter((v) => v != null && !Number.isNaN(v));
-  const data = nums.map((v, i) => ({ i: String(i), v }));
+  const data = (values || [])
+    .map((v, i) => ({ i: String(i), v }))
+    .filter((entry) => entry.v != null && !Number.isNaN(entry.v));
   if (!data.length) {
     return <span className="text-slate-500">—</span>;
   }
+  const nums = data.map((entry) => entry.v);
   const yMin = Math.min(0, ...nums);
   const yMax = Math.max(0, ...nums);
   const maxBarSize = nums.length <= 3 ? 10 : 4;
@@ -389,7 +391,7 @@ export default function Leaderboard() {
                         </td>
                         <td className="px-4 py-3">
                           <MiniProfitSpark
-                            values={monthProfits.filter((v) => v != null)}
+                            values={monthProfits}
                             unitLabel="Month"
                           />
                         </td>
