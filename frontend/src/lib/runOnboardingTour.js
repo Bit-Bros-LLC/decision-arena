@@ -12,14 +12,23 @@ import { trackEvent } from './analytics';
  * @property {'start'|'center'|'end'} [align]
  * @property {('next'|'previous'|'close')[]} [showButtons]
  * @property {boolean} [advanceOnStorySelect] - metadata for caller; not used by the runner
+ * @property {boolean} [advanceOnModalClose] - metadata for caller; not used by the runner
+ * @property {() => void|Promise<void>} [prepareNext] - optional async work before advancing (e.g. open a modal)
+ * @property {() => void} [preparePrevious] - optional work before going back (e.g. close a modal)
  */
 
 /**
  * Run a spotlight tour. Marks tour completed or skipped in localStorage.
- * @param {{ userId: string, userRole: string, tourId: string, steps: TourStep[] }} options
+ * @param {{
+ *   userId: string,
+ *   userRole: string,
+ *   tourId: string,
+ *   steps: TourStep[],
+ *   onDestroyed?: () => void,
+ * }} options
  * @returns {import('driver.js').Driver | null}
  */
-export function runOnboardingTour({ userId, userRole, tourId, steps }) {
+export function runOnboardingTour({ userId, userRole, tourId, steps, onDestroyed: onDestroyedCb }) {
   if (!userId || !tourId || !steps?.length) return null;
 
   trackEvent('onboarding_tour_started', { tour_id: tourId, user_role: userRole });
@@ -71,12 +80,28 @@ export function runOnboardingTour({ userId, userRole, tourId, steps }) {
       skipButton.addEventListener('click', () => markSkipped(d));
       popover.footerButtons.insertBefore(skipButton, popover.footerButtons.firstChild);
     },
-    onNextClick: (_element, _step, { driver: d }) => {
+    onNextClick: async (_element, _step, { driver: d }) => {
+      const index = d.getActiveIndex?.() ?? 0;
+      const prepareNext = steps[index]?.prepareNext;
+      if (prepareNext) {
+        try {
+          await prepareNext();
+        } catch {
+          // Continue even if prepare fails — target may still appear shortly.
+        }
+      }
       if (d.hasNextStep()) {
         d.moveNext();
         return;
       }
       markCompleted(d);
+    },
+    onPrevClick: (_element, _step, { driver: d }) => {
+      const index = d.getActiveIndex?.() ?? 0;
+      steps[index]?.preparePrevious?.();
+      if (d.hasPreviousStep()) {
+        d.movePrevious();
+      }
     },
     onCloseClick: (_element, _step, { driver: d }) => {
       markSkipped(d);
@@ -87,6 +112,7 @@ export function runOnboardingTour({ userId, userRole, tourId, steps }) {
         setTourStatus(userId, tourId, 'skipped');
         trackEvent('onboarding_tour_skipped', { tour_id: tourId, user_role: userRole });
       }
+      onDestroyedCb?.();
     },
   });
 

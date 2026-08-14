@@ -14,6 +14,7 @@ import { isTourDone, TOUR_IDS } from '../lib/onboarding';
 import {
   buildProfessorSeasonTourSteps,
   getProfessorSeasonTourStartupSelectors,
+  PROFESSOR_SEASON_DEMAND_PREVIEW_STEP,
 } from '../lib/professorSeasonTour';
 import { SEASON_CREATOR_COPY } from '../lib/seasonCreatorCopy';
 import {
@@ -30,6 +31,27 @@ import {
 } from '../lib/seasonMixConfig';
 import { isTypicalMonthDuration, TYPICAL_MONTH_DAYS_MIN, TYPICAL_MONTH_DAYS_MAX } from '../lib/seasonDuration';
 
+const DEMAND_PREVIEW_SELECTOR = '[data-tour="season-demand-preview"]';
+
+function waitForSelector(selector, { maxAttempts = 20, intervalMs = 50 } = {}) {
+  return new Promise((resolve) => {
+    let attempt = 0;
+    function tryFind() {
+      if (document.querySelector(selector)) {
+        resolve(true);
+        return;
+      }
+      if (attempt < maxAttempts) {
+        attempt += 1;
+        setTimeout(tryFind, intervalMs);
+        return;
+      }
+      resolve(false);
+    }
+    tryFind();
+  });
+}
+
 const DEFAULT_COSTS = {
   holding_per_unit: 1,
   stockout_penalty: 10,
@@ -39,6 +61,12 @@ const DEFAULT_COSTS = {
   dual_source_enabled: false,
   dual_source_premium_per_unit: 2,
   dual_source_rescue_pct: 1,
+};
+
+const EMPTY_STORY_CHART = {
+  chartData: [],
+  boundary: null,
+  roundBoundaries: [],
 };
 
 function nextSundayMidnightLocal() {
@@ -66,6 +94,13 @@ export default function SeasonCreator() {
   const tourStartedRef = useRef(false);
   const tourDriverRef = useRef(null);
   const storyIdAtTourStartRef = useRef(null);
+  const skipModalCloseAdvanceRef = useRef(false);
+  const openStoryDemandPreviewRef = useRef(async () => {});
+  const clearStoryChartRef = useRef(() => {});
+  const selectedStoryRef = useRef(null);
+  const storyChartOpenRef = useRef(false);
+  const storyChartOpenPrevRef = useRef(false);
+  const [tourActive, setTourActive] = useState(false);
 
   const [presets, setPresets] = useState([]);
   const [presetsError, setPresetsError] = useState(null);
@@ -114,11 +149,9 @@ export default function SeasonCreator() {
   const [storyChartOpen, setStoryChartOpen] = useState(false);
   const [storyChartLoading, setStoryChartLoading] = useState(false);
   const [storyChartError, setStoryChartError] = useState(null);
-  const [storyChart, setStoryChart] = useState({
-    chartData: [],
-    boundary: null,
-    roundBoundaries: [],
-  });
+  const [storyChart, setStoryChart] = useState(EMPTY_STORY_CHART);
+  const [storyChartStory, setStoryChartStory] = useState(null);
+  const storyChartRequestIdRef = useRef(0);
 
   useBreadcrumbLabels({ labels: roomLabel ? { room: roomLabel } : {} });
 
@@ -188,10 +221,62 @@ export default function SeasonCreator() {
     [stories, selectedStoryId],
   );
   const storyLocked = Boolean(selectedStory);
+  selectedStoryRef.current = selectedStory;
+  storyChartOpenRef.current = storyChartOpen;
+
+  const clearStoryChart = () => {
+    storyChartRequestIdRef.current += 1;
+    setStoryChartOpen(false);
+    setStoryChartLoading(false);
+    setStoryChartError(null);
+    setStoryChart(EMPTY_STORY_CHART);
+    setStoryChartStory(null);
+  };
+  clearStoryChartRef.current = clearStoryChart;
+
+  const openStoryDemandPreview = async (story) => {
+    const target = story ?? selectedStoryRef.current;
+    if (!target) return;
+    const requestId = ++storyChartRequestIdRef.current;
+    setStoryChart(EMPTY_STORY_CHART);
+    setStoryChartStory(target);
+    setStoryChartError(null);
+    setStoryChartLoading(true);
+    setStoryChartOpen(true);
+    try {
+      const res = await api.previewStoryPackage(target.id);
+      if (requestId !== storyChartRequestIdRef.current) return;
+      const transformed = transformPreviewResponse(res);
+      setStoryChart({
+        chartData: transformed.chartData,
+        boundary: transformed.boundary,
+        roundBoundaries: transformed.roundBoundaries,
+      });
+    } catch (err) {
+      if (requestId !== storyChartRequestIdRef.current) return;
+      setStoryChartError(err.message || 'Could not generate preview');
+    } finally {
+      if (requestId === storyChartRequestIdRef.current) {
+        setStoryChartLoading(false);
+      }
+    }
+  };
+  openStoryDemandPreviewRef.current = openStoryDemandPreview;
+
+  const openDemandPreviewForTour = async () => {
+    if (storyChartOpenRef.current && document.querySelector(DEMAND_PREVIEW_SELECTOR)) {
+      return;
+    }
+    const story = selectedStoryRef.current;
+    if (!story) return;
+    openStoryDemandPreviewRef.current(story);
+    await waitForSelector(DEMAND_PREVIEW_SELECTOR);
+  };
 
   const applyStory = (story) => {
     if (!story) {
       setSelectedStoryId(null);
+      clearStoryChart();
       return;
     }
     setCustomBuildOpen(false);
@@ -203,7 +288,7 @@ export default function SeasonCreator() {
     setStartingInventory(story.starting_inventory);
     setCosts({ ...DEFAULT_COSTS, ...(story.costs || {}) });
     setSubmitError(null);
-    setStoryChartError(null);
+    clearStoryChart();
   };
 
   // Auto-fill the season name as "Story title — Class name" once both are known.
@@ -243,6 +328,8 @@ export default function SeasonCreator() {
   useEffect(() => {
     tourStartedRef.current = false;
     storyIdAtTourStartRef.current = null;
+    skipModalCloseAdvanceRef.current = false;
+    setTourActive(false);
     tourDriverRef.current?.destroy?.();
     tourDriverRef.current = null;
   }, [roomId, tourRevision]);
@@ -258,7 +345,25 @@ export default function SeasonCreator() {
     }
 
     const hasStorySelected = Boolean(selectedStoryId);
-    const steps = buildProfessorSeasonTourSteps(hasStorySelected);
+    const baseSteps = buildProfessorSeasonTourSteps(hasStorySelected);
+    const steps = baseSteps.map((step, index) => {
+      if (index === 0) {
+        return {
+          ...step,
+          prepareNext: () => openDemandPreviewForTour(),
+        };
+      }
+      if (index === PROFESSOR_SEASON_DEMAND_PREVIEW_STEP) {
+        return {
+          ...step,
+          preparePrevious: () => {
+            skipModalCloseAdvanceRef.current = true;
+            clearStoryChartRef.current();
+          },
+        };
+      }
+      return step;
+    });
     const startupSelectors = getProfessorSeasonTourStartupSelectors(hasStorySelected);
 
     let cancelled = false;
@@ -282,11 +387,15 @@ export default function SeasonCreator() {
 
       tourStartedRef.current = true;
       storyIdAtTourStartRef.current = selectedStoryId;
+      setTourActive(true);
       tourDriverRef.current = runOnboardingTour({
         userId,
         userRole,
         tourId: TOUR_IDS.PROFESSOR_SEASON,
         steps,
+        onDestroyed: () => {
+          setTourActive(false);
+        },
       });
     }
 
@@ -309,6 +418,7 @@ export default function SeasonCreator() {
     stories,
   ]);
 
+  // Step 0 without a pre-selected story: Use this story → open demand preview → advance.
   useEffect(() => {
     if (!selectedStoryId) return;
     if (storyIdAtTourStartRef.current) return;
@@ -318,33 +428,47 @@ export default function SeasonCreator() {
     if (driverInstance.getActiveIndex?.() !== 0) return;
 
     let cancelled = false;
-    let attempt = 0;
-    const maxAttempts = 15;
 
-    function tryAdvance() {
+    (async () => {
+      await openDemandPreviewForTour();
       if (cancelled) return;
-
-      const narrative = document.querySelector('[data-tour="season-story-narrative"]');
-      if (!narrative) {
-        if (attempt < maxAttempts) {
-          attempt += 1;
-          setTimeout(tryAdvance, 100);
-        }
-        return;
-      }
-
-      narrative.scrollIntoView({ block: 'nearest', behavior: 'auto' });
-      if (tourDriverRef.current?.isActive?.() && tourDriverRef.current.getActiveIndex?.() === 0) {
+      if (
+        tourDriverRef.current?.isActive?.() &&
+        tourDriverRef.current.getActiveIndex?.() === 0
+      ) {
         tourDriverRef.current.moveNext();
       }
-    }
-
-    tryAdvance();
+    })();
 
     return () => {
       cancelled = true;
     };
   }, [selectedStoryId]);
+
+  // Demand-preview step: closing the chart advances (unless user hit Back).
+  useEffect(() => {
+    const wasOpen = storyChartOpenPrevRef.current;
+    storyChartOpenPrevRef.current = storyChartOpen;
+
+    if (!wasOpen || storyChartOpen) return;
+    if (skipModalCloseAdvanceRef.current) {
+      skipModalCloseAdvanceRef.current = false;
+      return;
+    }
+
+    const driverInstance = tourDriverRef.current;
+    if (!driverInstance?.isActive?.()) return;
+    if (driverInstance.getActiveIndex?.() !== PROFESSOR_SEASON_DEMAND_PREVIEW_STEP) return;
+
+    requestAnimationFrame(() => {
+      if (
+        tourDriverRef.current?.isActive?.() &&
+        tourDriverRef.current.getActiveIndex?.() === PROFESSOR_SEASON_DEMAND_PREVIEW_STEP
+      ) {
+        tourDriverRef.current.moveNext();
+      }
+    });
+  }, [storyChartOpen]);
 
   const activePreset = useMemo(
     () => presets.find((p) => p.id === activePresetId) || null,
@@ -478,26 +602,6 @@ export default function SeasonCreator() {
     }
   };
 
-  const openStoryDemandPreview = async () => {
-    if (!selectedStory) return;
-    setStoryChartError(null);
-    setStoryChartLoading(true);
-    try {
-      const res = await api.previewStoryPackage(selectedStory.id);
-      const transformed = transformPreviewResponse(res);
-      setStoryChart({
-        chartData: transformed.chartData,
-        boundary: transformed.boundary,
-        roundBoundaries: transformed.roundBoundaries,
-      });
-      setStoryChartOpen(true);
-    } catch (err) {
-      setStoryChartError(err.message || 'Could not generate preview');
-    } finally {
-      setStoryChartLoading(false);
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitError(null);
@@ -616,7 +720,7 @@ export default function SeasonCreator() {
           <legend className="text-lg font-medium text-amber-500">Start from a story</legend>
           <p className="text-sm text-slate-400">
             Pick a ready-made narrative fiscal year — months, policy reviews, duration, inventory,
-            costs, demand timeline, and student news are all pre-built for you.{' '}
+            costs, demand timeline, and a professor-only story briefing are pre-built for you.{' '}
             <a
               href={`/stories?room=${roomId}`}
               className="text-amber-500 hover:text-amber-400"
@@ -632,9 +736,10 @@ export default function SeasonCreator() {
                 story={story}
                 selected={selectedStoryId === story.id}
                 onSelect={applyStory}
+                previewDisabled={tourActive}
                 onPreview={(s) => {
                   if (selectedStoryId !== s.id) applyStory(s);
-                  setTimeout(openStoryDemandPreview, 0);
+                  openStoryDemandPreview(s);
                 }}
               />
             ))}
@@ -816,7 +921,7 @@ export default function SeasonCreator() {
               <div data-tour="season-story-demand">
                 <button
                   type="button"
-                  onClick={openStoryDemandPreview}
+                  onClick={() => openStoryDemandPreview()}
                   disabled={storyChartLoading}
                   className="rounded-lg border border-slate-600 bg-slate-900 px-4 py-2 text-sm font-medium text-amber-500 hover:bg-slate-700 disabled:opacity-50"
                 >
@@ -827,15 +932,20 @@ export default function SeasonCreator() {
             </fieldset>
 
             <fieldset className="space-y-3" data-tour="season-story-narrative">
-              <legend className="text-lg font-medium text-amber-500">The story</legend>
+              <legend className="text-lg font-medium text-amber-500">The story (professor only)</legend>
+              <p className="text-xs text-slate-500">
+                Students never see this full arc — it would spoil the year. Brief yourself here before
+                you create.
+              </p>
               <Narrative text={selectedStory.narrative} />
             </fieldset>
 
             <fieldset className="space-y-3" data-tour="season-newsroom">
-              <legend className="text-lg font-medium text-amber-500">Newsroom preview</legend>
+              <legend className="text-lg font-medium text-amber-500">Newsroom (full briefing)</legend>
               <p className="text-xs text-slate-500">
-                Students see each item once its month arrives. Forecasts hint at upcoming months so
-                they can decide whether to spend a policy review.
+                You see every month&apos;s forecast and event below. Students only unlock items as each
+                month arrives — mostly the current event and upcoming forecasts — so they can decide
+                whether a policy review is worth it.
               </p>
               <StoryNews news={selectedStory.news} activeRoundNumber={null} />
             </fieldset>
@@ -886,13 +996,16 @@ export default function SeasonCreator() {
       />
 
       <PresetPreviewModal
-        open={storyChartOpen && storyChart.boundary != null}
-        onClose={() => setStoryChartOpen(false)}
-        title={selectedStory ? `${selectedStory.title} — demand timeline` : 'Story demand'}
+        open={storyChartOpen}
+        onClose={clearStoryChart}
+        title={storyChartStory ? `${storyChartStory.title} — demand timeline` : 'Story demand'}
         subtitle="Amber = historical lead-in students see on day one; sky = the full authored fiscal year timeline. Vertical lines mark month boundaries."
         chartData={storyChart.chartData}
         boundary={storyChart.boundary}
         roundBoundaries={storyChart.roundBoundaries}
+        loading={storyChartLoading}
+        error={storyChartError}
+        dataTour="season-demand-preview"
       />
     </div>
   );

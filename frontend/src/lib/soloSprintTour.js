@@ -11,7 +11,7 @@ export function buildSoloSprintTourSteps() {
     },
     {
       element: '[data-tour="sprint-basics"]',
-      title: 'Months & policy reviews',
+      title: 'Months & contract updates',
       description:
         'Choose how many months to play and how many times you can change your supply contract.',
       side: 'bottom',

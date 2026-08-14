@@ -252,13 +252,17 @@ export default function SeasonView() {
         </div>
       )}
 
-      {(season.narrative || (season.news && season.news.length > 0)) && (
+      {(isProfessor && season.narrative) ||
+      (season.news && season.news.length > 0) ? (
         <div className="grid gap-4 lg:grid-cols-2">
-          {season.narrative && (
+          {isProfessor && season.narrative && (
             <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">
               <h2 className="text-sm font-semibold uppercase tracking-wide text-amber-500">
-                The story so far
+                The story (professor only)
               </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Students do not see this briefing — it would spoil the year.
+              </p>
               <Narrative text={season.narrative} className="mt-2" />
             </div>
           )}
@@ -268,8 +272,9 @@ export default function SeasonView() {
                 Newsroom
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                Watch for forecasts about upcoming months — they can help you decide when to spend a
-                policy review.
+                {isProfessor
+                  ? 'Full year briefing for you. Students only unlock news as each month arrives — current events and upcoming forecasts.'
+                  : 'News unlocks as months arrive. Use forecasts about upcoming months when deciding whether to spend a policy review.'}
               </p>
               <div className="mt-3">
                 <StoryNews
@@ -286,7 +291,7 @@ export default function SeasonView() {
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       {!isProfessor && myState && (
         <div className="rounded-xl border border-slate-700 bg-slate-800 p-4">

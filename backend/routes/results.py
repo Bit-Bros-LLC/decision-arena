@@ -143,18 +143,38 @@ def season_leaderboard(
                 "rounds": {},
                 "season_total": 0.0,
                 "rounds_played": 0,
+                "season_stockout_days": 0,
+                "season_dual_source_spend": 0.0,
+                "_sold": 0,
+                "_demand": 0,
             }
         user_data[u.id]["rounds"][result.round_id] = {
             "round_number": next(r.round_number for r in scored_rounds if r.id == result.round_id),
             "profit": result.total_profit,
             "service_level": result.service_level,
+            "stockout_days": result.stockout_days,
+            "dual_source_spend": result.dual_source_spend,
         }
         user_data[u.id]["season_total"] += result.total_profit
         user_data[u.id]["rounds_played"] += 1
+        user_data[u.id]["season_stockout_days"] += int(result.stockout_days or 0)
+        user_data[u.id]["season_dual_source_spend"] += float(result.dual_source_spend or 0)
+        # Demand-weighted fill rate across the fiscal year (not a plain average of monthly SLs).
+        daily = result.daily_log or []
+        user_data[u.id]["_sold"] += sum(int(d.get("sold") or 0) for d in daily)
+        user_data[u.id]["_demand"] += sum(int(d.get("demand") or 0) for d in daily)
 
     # Sort by season total, assign ranks
     standings = sorted(user_data.values(), key=lambda x: x["season_total"], reverse=True)
     for i, entry in enumerate(standings, 1):
+        demand = entry.pop("_demand", 0)
+        sold = entry.pop("_sold", 0)
+        if demand > 0:
+            entry["season_service_level"] = round(sold / demand, 4)
+        else:
+            # Fallback: mean of monthly service levels when daily_log is unavailable
+            sls = [c["service_level"] for c in entry["rounds"].values() if c.get("service_level") is not None]
+            entry["season_service_level"] = round(sum(sls) / len(sls), 4) if sls else 0.0
         entry["rank"] = i
         entry["is_me"] = entry["user_id"] == user.id
     _redact_season_cohort_peers(standings, user)

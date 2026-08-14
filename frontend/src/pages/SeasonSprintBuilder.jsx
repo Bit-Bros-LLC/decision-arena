@@ -330,7 +330,7 @@ export default function SeasonSprintBuilder() {
             />
           </div>
           <div>
-            <FieldLabel label="Policy reviews" help={SEASON_SPRINT_COPY.contractUpdates} />
+            <FieldLabel label="Contract updates" help={SEASON_SPRINT_COPY.contractUpdates} />
             <input
               type="number"
               min={0}

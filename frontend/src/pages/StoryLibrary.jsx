@@ -72,8 +72,8 @@ export default function StoryLibrary() {
       <div>
         <h1 className="text-2xl font-semibold text-slate-100">Story library</h1>
         <p className="mt-1 text-sm text-slate-400">
-          Ready-made narrative fiscal years. Each story pre-builds every setting plus a storyline and
-          timed student news. Pick one and you're ready to launch.
+          Ready-made narrative fiscal years for professors. Each package pre-builds settings plus a full
+          story briefing and news timeline — students only unlock news month by month.
         </p>
         <div className="mt-3 flex flex-wrap gap-3 text-sm">
           <Link to="/dashboard" className="text-amber-500 hover:text-amber-400">
@@ -162,14 +162,18 @@ export default function StoryLibrary() {
             </dl>
 
             <div>
-              <h3 className="text-sm font-medium text-amber-500">The story</h3>
+              <h3 className="text-sm font-medium text-amber-500">The story (professor only)</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                Students never see this full arc — it would spoil the year.
+              </p>
               <Narrative text={open.narrative} className="mt-2" />
             </div>
 
             <div>
-              <h3 className="text-sm font-medium text-amber-500">Newsroom</h3>
+              <h3 className="text-sm font-medium text-amber-500">Newsroom (full briefing)</h3>
               <p className="mt-1 text-xs text-slate-500">
-                Students see each item as its month arrives. Forecasts preview upcoming months.
+                Full year for you. Students only unlock items as each month arrives — current events and
+                upcoming forecasts.
               </p>
               <div className="mt-2">
                 <StoryNews news={open.news} activeRoundNumber={null} />

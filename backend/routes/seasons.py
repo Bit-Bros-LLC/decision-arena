@@ -138,6 +138,43 @@ def _is_professor_of(db: Session, user: UserRow, room_id: str) -> bool:
     return bool(room and room.professor_id == user.id)
 
 
+def _can_view_story_spoilers(db: Session, user: UserRow, season: SeasonRow) -> bool:
+    """Full narrative + complete news timeline are professor briefing only.
+
+    Students (and solo practice owners who are not professors of the room)
+    only receive news revealed through the current playable month.
+    """
+    if user.role != "professor":
+        return False
+    if season.room_id:
+        return _is_professor_of(db, user, season.room_id)
+    return season.owner_user_id == user.id
+
+
+def _student_news_through_round(season: SeasonRow, rounds: list[RoundRow]) -> int:
+    """Highest month number whose news a non-professor may see."""
+    if season.status == "completed":
+        return int(season.total_rounds or 0)
+    if not rounds:
+        return 0
+    live = [r for r in rounds if r.status in ("active", "scoring", "scored")]
+    if live:
+        return max(int(r.round_number) for r in live)
+    return 0
+
+
+def _filter_news_for_viewer(
+    news: list | None,
+    *,
+    can_spoiler: bool,
+    through_round: int,
+) -> list:
+    items = list(news or [])
+    if can_spoiler:
+        return items
+    return [n for n in items if int(n.get("reveal_round") or 0) <= through_round]
+
+
 def _ensure_member(db: Session, user: UserRow, room_id: str):
     if _is_professor_of(db, user, room_id):
         return
@@ -184,7 +221,17 @@ def _get_or_create_private_sandbox_room(db: Session, user: UserRow) -> RoomRow:
     return room
 
 
-def _season_to_response(season: SeasonRow, rounds: list[RoundRow]) -> dict:
+def _season_to_response(
+    season: SeasonRow,
+    rounds: list[RoundRow],
+    *,
+    user: UserRow | None = None,
+    db: Session | None = None,
+) -> dict:
+    can_spoiler = False
+    if user is not None and db is not None:
+        can_spoiler = _can_view_story_spoilers(db, user, season)
+    through_round = _student_news_through_round(season, rounds)
     return {
         "id": season.id,
         "room_id": season.room_id,
@@ -205,8 +252,12 @@ def _season_to_response(season: SeasonRow, rounds: list[RoundRow]) -> dict:
         "season_mode": season.season_mode,
         "mix_config": season.mix_config or {},
         "story_package_id": season.story_package_id,
-        "narrative": season.narrative,
-        "news": season.news or [],
+        "narrative": season.narrative if can_spoiler else None,
+        "news": _filter_news_for_viewer(
+            season.news,
+            can_spoiler=can_spoiler,
+            through_round=through_round,
+        ),
         "status": season.status,
         "rounds": [
             {
@@ -258,15 +309,15 @@ def get_presets(_: UserRow = Depends(get_current_user)):
 
 
 @router.get("/story-packages")
-def get_story_packages(_: UserRow = Depends(get_current_user)):
-    """List authored narrative story packages (metadata, narrative, news)."""
+def get_story_packages(_: UserRow = Depends(require_professor)):
+    """List authored narrative story packages (professor briefing only)."""
     return list_story_packages()
 
 
 @router.get("/story-packages/{story_id}/preview")
 def preview_story_package(
     story_id: str,
-    _: UserRow = Depends(get_current_user),
+    _: UserRow = Depends(require_professor),
 ):
     """Return a story's frozen demand timeline so the chart can be previewed."""
     pkg = get_story_package(story_id)
@@ -485,7 +536,7 @@ def create_season(
     for r in rounds:
         db.refresh(r)
     db.refresh(season)
-    return _season_to_response(season, rounds)
+    return _season_to_response(season, rounds, user=user, db=db)
 
 
 @router.get("/room/{room_id}")
@@ -520,7 +571,7 @@ def list_room_seasons(
             .order_by(RoundRow.round_number)
             .all()
         )
-        out.append(_season_to_response(s, rounds))
+        out.append(_season_to_response(s, rounds, user=user, db=db))
     return out
 
 
@@ -543,7 +594,7 @@ def list_sandbox_seasons(
             .order_by(RoundRow.round_number)
             .all()
         )
-        out.append(_season_to_response(s, rounds))
+        out.append(_season_to_response(s, rounds, user=user, db=db))
     return out
 
 
@@ -576,7 +627,7 @@ def list_my_solo_seasons(
             .order_by(RoundRow.round_number)
             .all()
         )
-        row = _season_to_response(s, rounds)
+        row = _season_to_response(s, rounds, user=user, db=db)
         row["open_path"] = (
             f"/room/{s.room_id}/season/{s.id}" if s.room_id else f"/season-sprint/{s.id}"
         )
@@ -603,7 +654,7 @@ def get_season(
         .order_by(RoundRow.round_number)
         .all()
     )
-    return _season_to_response(season, rounds)
+    return _season_to_response(season, rounds, user=user, db=db)
 
 
 @router.get("/{season_id}/my-state")

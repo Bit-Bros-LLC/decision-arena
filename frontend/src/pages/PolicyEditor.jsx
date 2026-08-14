@@ -699,7 +699,8 @@ export default function PolicyEditor() {
                 Newsroom
               </h2>
               <p className="mt-1 text-[11px] text-slate-500">
-                Use forecasts to decide whether spending a policy review now is worth it.
+                Current and upcoming headlines only — use forecasts to decide whether a policy review
+                is worth it now.
               </p>
               <div className="mt-2">
                 <StoryNews news={relevant} activeRoundNumber={current} />

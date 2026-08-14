@@ -24,17 +24,21 @@ function profitClass(v) {
   return 'text-slate-400';
 }
 
-function MiniProfitSpark({ values }) {
-  const data = (values || []).map((v, i) => ({ i, v }));
+function MiniProfitSpark({ values, unitLabel = 'Day' }) {
+  const nums = (values || []).filter((v) => v != null && !Number.isNaN(v));
+  const data = nums.map((v, i) => ({ i: String(i), v }));
   if (!data.length) {
     return <span className="text-slate-500">—</span>;
   }
+  const yMin = Math.min(0, ...nums);
+  const yMax = Math.max(0, ...nums);
+  const maxBarSize = nums.length <= 3 ? 10 : 4;
   return (
     <div className="h-10 w-28">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-          <XAxis dataKey="i" hide />
-          <YAxis hide domain={['dataMin', 'dataMax']} />
+          <XAxis dataKey="i" type="category" hide />
+          <YAxis hide domain={[yMin, yMax]} />
           <Tooltip
             contentStyle={{
               backgroundColor: '#1e293b',
@@ -44,9 +48,9 @@ function MiniProfitSpark({ values }) {
               fontSize: '12px',
             }}
             formatter={(val) => formatMoney(val)}
-            labelFormatter={() => 'Day'}
+            labelFormatter={(i) => `${unitLabel} ${Number(i) + 1}`}
           />
-          <Bar dataKey="v" maxBarSize={4}>
+          <Bar dataKey="v" maxBarSize={maxBarSize}>
             {data.map((entry) => (
               <Cell key={entry.i} fill={entry.v >= 0 ? '#34d399' : '#f87171'} />
             ))}
@@ -303,7 +307,7 @@ export default function Leaderboard() {
                   : 'No scored months in this fiscal year yet.'}
               </p>
             ) : (
-              <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[880px] text-left text-sm">
                 <thead className="border-b border-slate-700 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="sticky left-0 z-10 bg-slate-800 px-4 py-3">Rank</th>
@@ -319,6 +323,16 @@ export default function Leaderboard() {
                       </th>
                     ))}
                     <th className="px-4 py-3 whitespace-nowrap text-amber-500">Fiscal year total</th>
+                    <th className="px-4 py-3 whitespace-nowrap" title="Demand-weighted fill rate across scored months">
+                      Service level
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap" title="Total stockout days across scored months">
+                      Stockouts
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap" title="Cumulative dual-source premium spend">
+                      Dual source
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap">Month P&amp;L</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
@@ -326,6 +340,17 @@ export default function Leaderboard() {
                     const highlight =
                       me && row.is_me ? 'bg-amber-500/15 ring-1 ring-amber-500/40' : '';
                     const rowKey = row.user_id ?? `peer-${row.rank}`;
+                    const monthProfits = seasonColumns.map((r) => {
+                      if (isCohortPayload) {
+                        const pr = row.per_round?.[String(r.round_number)];
+                        return pr != null ? pr.profit : null;
+                      }
+                      return row.rounds?.[r.id]?.profit ?? null;
+                    });
+                    const sl =
+                      row.season_service_level != null
+                        ? (row.season_service_level ?? 0) * 100
+                        : null;
                     return (
                       <tr key={rowKey} className={highlight}>
                         <td className="sticky left-0 z-10 bg-slate-800 px-4 py-3 tabular-nums font-medium">
@@ -337,15 +362,8 @@ export default function Leaderboard() {
                             <span className="ml-2 text-xs font-semibold text-amber-500">(you)</span>
                           )}
                         </td>
-                        {seasonColumns.map((r) => {
-                          let p = null;
-                          if (isCohortPayload) {
-                            const pr = row.per_round?.[String(r.round_number)];
-                            p = pr != null ? pr.profit : null;
-                          } else {
-                            const cell = row.rounds?.[r.id];
-                            p = cell?.profit;
-                          }
+                        {seasonColumns.map((r, idx) => {
+                          const p = monthProfits[idx];
                           return (
                             <td
                               key={r.id != null ? r.id : `rn-${r.round_number}`}
@@ -359,6 +377,21 @@ export default function Leaderboard() {
                           className={`px-4 py-3 tabular-nums font-semibold ${profitClass(row.season_total)}`}
                         >
                           {formatMoney(row.season_total)}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-slate-200">
+                          {sl != null ? `${sl.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-slate-200">
+                          {row.season_stockout_days != null ? row.season_stockout_days : '—'}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-slate-200">
+                          {formatMoney(row.season_dual_source_spend)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <MiniProfitSpark
+                            values={monthProfits.filter((v) => v != null)}
+                            unitLabel="Month"
+                          />
                         </td>
                       </tr>
                     );
