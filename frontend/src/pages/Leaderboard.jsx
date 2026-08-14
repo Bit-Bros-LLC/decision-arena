@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -24,17 +24,23 @@ function profitClass(v) {
   return 'text-slate-400';
 }
 
-function MiniProfitSpark({ values }) {
-  const data = (values || []).map((v, i) => ({ i, v }));
+function MiniProfitSpark({ values, unitLabel = 'Day' }) {
+  const data = (values || [])
+    .map((v, i) => ({ i: String(i), v }))
+    .filter((entry) => entry.v != null && !Number.isNaN(entry.v));
   if (!data.length) {
     return <span className="text-slate-500">—</span>;
   }
+  const nums = data.map((entry) => entry.v);
+  const yMin = Math.min(0, ...nums);
+  const yMax = Math.max(0, ...nums);
+  const maxBarSize = nums.length <= 3 ? 10 : 4;
   return (
     <div className="h-10 w-28">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-          <XAxis dataKey="i" hide />
-          <YAxis hide domain={['dataMin', 'dataMax']} />
+          <XAxis dataKey="i" type="category" hide />
+          <YAxis hide domain={[yMin, yMax]} />
           <Tooltip
             contentStyle={{
               backgroundColor: '#1e293b',
@@ -44,9 +50,9 @@ function MiniProfitSpark({ values }) {
               fontSize: '12px',
             }}
             formatter={(val) => formatMoney(val)}
-            labelFormatter={() => 'Day'}
+            labelFormatter={(i) => `${unitLabel} ${Number(i) + 1}`}
           />
-          <Bar dataKey="v" maxBarSize={4}>
+          <Bar dataKey="v" maxBarSize={maxBarSize}>
             {data.map((entry) => (
               <Cell key={entry.i} fill={entry.v >= 0 ? '#34d399' : '#f87171'} />
             ))}
@@ -79,12 +85,7 @@ export default function Leaderboard() {
   const navigate = useNavigate();
   const roundId = params.roundId;
   const seasonIdParam = params.seasonId;
-  const roomIdParam = params.roomId;
-  const templateIdParam = params.templateId;
-  const isCohortRoute = Boolean(roomIdParam && templateIdParam);
-
-  /** Season route is `/leaderboard/season/:seasonId`. Cohort: `/leaderboard/room/.../template/.../cohort`. */
-  const isSeasonRoute = Boolean(seasonIdParam) && !isCohortRoute;
+  const isSeasonRoute = Boolean(seasonIdParam);
 
   const [roundRows, setRoundRows] = useState(null);
   const [seasonPayload, setSeasonPayload] = useState(null);
@@ -92,53 +93,21 @@ export default function Leaderboard() {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [unavailableNonClassSolo, setUnavailableNonClassSolo] = useState(false);
-  const [cohortRoomName, setCohortRoomName] = useState(null);
   const [seasonLeaderTitle, setSeasonLeaderTitle] = useState(null);
   const [roundLeaderTitle, setRoundLeaderTitle] = useState(null);
 
   const me = getUser();
 
-  useEffect(() => {
-    if (!isCohortRoute || !roomIdParam) {
-      setCohortRoomName(null);
-      return;
-    }
-    let cancelled = false;
-    api
-      .getRooms()
-      .then((list) => {
-        const found = list.find((r) => r.id === roomIdParam);
-        if (!cancelled) setCohortRoomName(found?.name ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setCohortRoomName(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isCohortRoute, roomIdParam]);
-
   const breadcrumbLeaderboard = useMemo(() => {
     const labels = {};
-    if (isCohortRoute && cohortRoomName) labels.room = cohortRoomName;
-    if (isCohortRoute && seasonPayload?.template_name) {
-      labels.leaderboardLeaf = `${seasonPayload.template_name} · Cohort`;
-    } else if (isSeasonRoute && seasonLeaderTitle) {
+    if (isSeasonRoute && seasonLeaderTitle) {
       labels.leaderboardLeaf = seasonLeaderTitle;
     }
-    if (roundId && !isSeasonRoute && !isCohortRoute && roundLeaderTitle) {
+    if (roundId && !isSeasonRoute && roundLeaderTitle) {
       labels.leaderboardRound = roundLeaderTitle;
     }
     return { labels, afterDashboard: [] };
-  }, [
-    isCohortRoute,
-    isSeasonRoute,
-    roundId,
-    cohortRoomName,
-    seasonPayload?.template_name,
-    seasonLeaderTitle,
-    roundLeaderTitle,
-  ]);
+  }, [isSeasonRoute, roundId, seasonLeaderTitle, roundLeaderTitle]);
 
   useBreadcrumbLabels(breadcrumbLeaderboard);
 
@@ -151,14 +120,7 @@ export default function Leaderboard() {
       setSeasonLeaderTitle(null);
       setRoundLeaderTitle(null);
       try {
-        if (isCohortRoute && roomIdParam && templateIdParam) {
-          const s = await api.getTemplateCohortLeaderboard(roomIdParam, templateIdParam);
-          if (!cancelled) {
-            setSeasonPayload(s);
-            setRoundRows(null);
-            setSeasonIdFromRound(null);
-          }
-        } else if (isSeasonRoute && seasonIdParam) {
+        if (isSeasonRoute && seasonIdParam) {
           const meta = await api.getSeason(seasonIdParam);
           if (!cancelled) setSeasonLeaderTitle(meta?.name ?? null);
           if (meta?.season_scope === 'sandbox') {
@@ -223,7 +185,7 @@ export default function Leaderboard() {
     return () => {
       cancelled = true;
     };
-  }, [roundId, seasonIdParam, isSeasonRoute, isCohortRoute, roomIdParam, templateIdParam]);
+  }, [roundId, seasonIdParam, isSeasonRoute]);
 
   const defaultRoundIdFromSeason = useMemo(() => {
     const rounds = seasonPayload?.rounds;
@@ -232,7 +194,7 @@ export default function Leaderboard() {
   }, [seasonPayload]);
 
   const seasonColumns = seasonPayload?.rounds ?? [];
-  const isCohortPayload = seasonPayload?.cohort === true;
+  const isCohortPayload = false;
 
   const goRoundTab = () => {
     if (roundId && !isSeasonRoute) {
@@ -255,21 +217,10 @@ export default function Leaderboard() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold text-slate-100">
-              {isCohortRoute ? 'Template cohort standings' : 'Leaderboard'}
+              Leaderboard
             </h1>
-            {isCohortRoute && roomIdParam && (
-              <Link
-                to={`/room/${roomIdParam}`}
-                className="mt-1 block text-sm text-amber-500/90 hover:text-amber-400"
-              >
-                ← Back to classroom
-              </Link>
-            )}
-            {isCohortPayload && seasonPayload?.template_name && (
-              <p className="mt-1 text-sm text-slate-400">{seasonPayload.template_name}</p>
-            )}
           </div>
-          {!isCohortRoute && !unavailableNonClassSolo && (
+          {!unavailableNonClassSolo && (
             <div className="flex gap-2">
               <TabButton
                 active={!isSeasonRoute}
@@ -349,7 +300,7 @@ export default function Leaderboard() {
           </div>
         )}
 
-        {!loading && !error && !unavailableNonClassSolo && (isCohortRoute || isSeasonRoute) && seasonPayload && (
+        {!loading && !error && !unavailableNonClassSolo && isSeasonRoute && seasonPayload && (
           <div className="overflow-x-auto rounded-xl border border-slate-700 bg-slate-800 shadow-lg">
             {seasonColumns.length === 0 ? (
               <p className="p-6 text-slate-400">
@@ -358,7 +309,7 @@ export default function Leaderboard() {
                   : 'No scored months in this fiscal year yet.'}
               </p>
             ) : (
-              <table className="w-full text-left text-sm">
+              <table className="w-full min-w-[880px] text-left text-sm">
                 <thead className="border-b border-slate-700 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
                     <th className="sticky left-0 z-10 bg-slate-800 px-4 py-3">Rank</th>
@@ -374,6 +325,16 @@ export default function Leaderboard() {
                       </th>
                     ))}
                     <th className="px-4 py-3 whitespace-nowrap text-amber-500">Fiscal year total</th>
+                    <th className="px-4 py-3 whitespace-nowrap" title="Demand-weighted fill rate across scored months">
+                      Service level
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap" title="Total stockout days across scored months">
+                      Stockouts
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap" title="Cumulative dual-source premium spend">
+                      Dual source
+                    </th>
+                    <th className="px-4 py-3 whitespace-nowrap">Month P&amp;L</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
@@ -381,6 +342,17 @@ export default function Leaderboard() {
                     const highlight =
                       me && row.is_me ? 'bg-amber-500/15 ring-1 ring-amber-500/40' : '';
                     const rowKey = row.user_id ?? `peer-${row.rank}`;
+                    const monthProfits = seasonColumns.map((r) => {
+                      if (isCohortPayload) {
+                        const pr = row.per_round?.[String(r.round_number)];
+                        return pr != null ? pr.profit : null;
+                      }
+                      return row.rounds?.[r.id]?.profit ?? null;
+                    });
+                    const sl =
+                      row.season_service_level != null
+                        ? (row.season_service_level ?? 0) * 100
+                        : null;
                     return (
                       <tr key={rowKey} className={highlight}>
                         <td className="sticky left-0 z-10 bg-slate-800 px-4 py-3 tabular-nums font-medium">
@@ -392,15 +364,8 @@ export default function Leaderboard() {
                             <span className="ml-2 text-xs font-semibold text-amber-500">(you)</span>
                           )}
                         </td>
-                        {seasonColumns.map((r) => {
-                          let p = null;
-                          if (isCohortPayload) {
-                            const pr = row.per_round?.[String(r.round_number)];
-                            p = pr != null ? pr.profit : null;
-                          } else {
-                            const cell = row.rounds?.[r.id];
-                            p = cell?.profit;
-                          }
+                        {seasonColumns.map((r, idx) => {
+                          const p = monthProfits[idx];
                           return (
                             <td
                               key={r.id != null ? r.id : `rn-${r.round_number}`}
@@ -414,6 +379,21 @@ export default function Leaderboard() {
                           className={`px-4 py-3 tabular-nums font-semibold ${profitClass(row.season_total)}`}
                         >
                           {formatMoney(row.season_total)}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-slate-200">
+                          {sl != null ? `${sl.toFixed(1)}%` : '—'}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-slate-200">
+                          {row.season_stockout_days != null ? row.season_stockout_days : '—'}
+                        </td>
+                        <td className="px-4 py-3 tabular-nums text-slate-200">
+                          {formatMoney(row.season_dual_source_spend)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <MiniProfitSpark
+                            values={monthProfits}
+                            unitLabel="Month"
+                          />
                         </td>
                       </tr>
                     );

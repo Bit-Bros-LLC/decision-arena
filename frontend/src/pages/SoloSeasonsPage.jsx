@@ -74,21 +74,14 @@ export default function SoloSeasonsPage() {
     for (const s of seasons) {
       if (s.season_scope === 'sandbox') {
         priv.push(s);
-      } else if (s.source_template_id) {
+      } else if (s.is_practice_run || s.room_id) {
         cls.push(s);
-      } else {
-        if (s.room_id) cls.push(s);
       }
     }
     return { privateSeasons: priv, classSeasons: cls };
   }, [seasons]);
 
-  const classSeasonTitle = (s) => {
-    if (s.source_template_id && s.template_name && s.sprint_attempt != null) {
-      return `${s.template_name} · Attempt ${s.sprint_attempt}`;
-    }
-    return s.name;
-  };
+  const classSeasonTitle = (s) => s.name;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -159,7 +152,7 @@ export default function SoloSeasonsPage() {
         <section>
           <h2 className="mb-3 text-lg font-medium text-slate-100">Classroom practice runs</h2>
           <p className="mb-3 text-sm text-slate-400">
-            Case studies you started in a classroom. Your professor can see these in the class.
+            Practice runs you started in a classroom. Your professor can see these in the class.
           </p>
           <ul className="space-y-3">
             {classSeasons.map((season) => (

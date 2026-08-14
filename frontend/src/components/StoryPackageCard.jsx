@@ -5,6 +5,7 @@ export default function StoryPackageCard({
   selected = false,
   onSelect,
   onPreview,
+  previewDisabled = false,
   ctaLabel = 'Use this story',
 }) {
   const badgeClass = BADGE_COLORS[story.difficulty] || 'text-slate-300 border-slate-500/30 bg-slate-500/10';
@@ -49,7 +50,8 @@ export default function StoryPackageCard({
           <button
             type="button"
             onClick={() => onPreview(story)}
-            className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-700"
+            disabled={previewDisabled}
+            className="rounded-lg border border-slate-600 px-3 py-1.5 text-sm font-medium text-slate-300 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
           >
             Preview demand
           </button>

@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from collections import defaultdict
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from auth import get_current_user
 from database import (
-    UserRow, RoundRow, SeasonRow, RoomSoloTemplateRow,
+    UserRow, RoundRow, SeasonRow,
     PolicyRow, ResultRow, get_db,
 )
-from routes.seasons import _ensure_season_access, _ensure_member
+from routes.seasons import _ensure_season_access
 
 router = APIRouter(tags=["results"])
 
@@ -146,18 +143,38 @@ def season_leaderboard(
                 "rounds": {},
                 "season_total": 0.0,
                 "rounds_played": 0,
+                "season_stockout_days": 0,
+                "season_dual_source_spend": 0.0,
+                "_sold": 0,
+                "_demand": 0,
             }
         user_data[u.id]["rounds"][result.round_id] = {
             "round_number": next(r.round_number for r in scored_rounds if r.id == result.round_id),
             "profit": result.total_profit,
             "service_level": result.service_level,
+            "stockout_days": result.stockout_days,
+            "dual_source_spend": result.dual_source_spend,
         }
         user_data[u.id]["season_total"] += result.total_profit
         user_data[u.id]["rounds_played"] += 1
+        user_data[u.id]["season_stockout_days"] += int(result.stockout_days or 0)
+        user_data[u.id]["season_dual_source_spend"] += float(result.dual_source_spend or 0)
+        # Demand-weighted fill rate across the fiscal year (not a plain average of monthly SLs).
+        daily = result.daily_log or []
+        user_data[u.id]["_sold"] += sum(int(d.get("sold") or 0) for d in daily)
+        user_data[u.id]["_demand"] += sum(int(d.get("demand") or 0) for d in daily)
 
     # Sort by season total, assign ranks
     standings = sorted(user_data.values(), key=lambda x: x["season_total"], reverse=True)
     for i, entry in enumerate(standings, 1):
+        demand = entry.pop("_demand", 0)
+        sold = entry.pop("_sold", 0)
+        if demand > 0:
+            entry["season_service_level"] = round(sold / demand, 4)
+        else:
+            # Fallback: mean of monthly service levels when daily_log is unavailable
+            sls = [c["service_level"] for c in entry["rounds"].values() if c.get("service_level") is not None]
+            entry["season_service_level"] = round(sum(sls) / len(sls), 4) if sls else 0.0
         entry["rank"] = i
         entry["is_me"] = entry["user_id"] == user.id
     _redact_season_cohort_peers(standings, user)
@@ -175,132 +192,7 @@ def template_cohort_leaderboard(
     user: UserRow = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Cumulative standings across all season instances in this room for one template
-    (async runs). Rounds are keyed by round_number in per_round, not by round_id."""
-    _ensure_member(db, user, room_id)
-    template = (
-        db.query(RoomSoloTemplateRow)
-        .filter(
-            RoomSoloTemplateRow.id == template_id,
-            RoomSoloTemplateRow.room_id == room_id,
-        )
-        .first()
+    raise HTTPException(
+        410,
+        "Case study cohort standings have been removed. Use fiscal year or practice run standings.",
     )
-    if not template:
-        raise HTTPException(404, "Template not found in this room")
-
-    seasons = (
-        db.query(SeasonRow)
-        .filter(SeasonRow.room_id == room_id, SeasonRow.source_template_id == template_id)
-        .all()
-    )
-    if not seasons:
-        return {
-            "room_id": room_id,
-            "template_id": template_id,
-            "cohort": True,
-            "rounds": [],
-            "standings": [],
-        }
-    season_ids = [s.id for s in seasons]
-    policy_pairs = (
-        db.query(PolicyRow.user_id, SeasonRow.id)
-        .select_from(PolicyRow)
-        .join(RoundRow, PolicyRow.round_id == RoundRow.id)
-        .join(SeasonRow, RoundRow.season_id == SeasonRow.id)
-        .filter(SeasonRow.id.in_(season_ids))
-        .distinct()
-        .all()
-    )
-    u_to_sids: dict[str, set[str]] = defaultdict(set)
-    for uid, sid in policy_pairs:
-        u_to_sids[uid].add(sid)
-
-    user_canonical_season: dict[str, str] = {}
-    for uid, sids in u_to_sids.items():
-        if not sids:
-            continue
-        season_rows = (
-            db.query(SeasonRow).filter(SeasonRow.id.in_(sids)).all()
-        )
-        if not season_rows:
-            continue
-        best = max(
-            season_rows,
-            key=lambda s: (s.created_at or datetime.min, s.id),
-        )
-        user_canonical_season[uid] = best.id
-
-    standings: list[dict] = []
-    for uid, canon_season_id in user_canonical_season.items():
-        prof_u = db.query(UserRow).filter(UserRow.id == uid).first()
-        if not prof_u:
-            continue
-        scored_rounds = (
-            db.query(RoundRow)
-            .filter(
-                RoundRow.season_id == canon_season_id,
-                RoundRow.status == "scored",
-            )
-            .order_by(RoundRow.round_number)
-            .all()
-        )
-        if not scored_rounds:
-            continue
-        rids = [r.id for r in scored_rounds]
-        all_results = (
-            db.query(ResultRow, PolicyRow, UserRow)
-            .join(PolicyRow, ResultRow.policy_id == PolicyRow.id)
-            .join(UserRow, PolicyRow.user_id == UserRow.id)
-            .filter(ResultRow.round_id.in_(rids), UserRow.id == uid)
-            .all()
-        )
-        if not all_results:
-            continue
-        per_round: dict = {}
-        season_total = 0.0
-        for result, _policy, _u2 in all_results:
-            rnum = next(
-                (sr.round_number for sr in scored_rounds if sr.id == result.round_id),
-                0,
-            )
-            if rnum == 0:
-                continue
-            per_round[str(rnum)] = {
-                "round_number": rnum,
-                "profit": result.total_profit,
-                "service_level": result.service_level,
-            }
-            season_total += result.total_profit
-        standings.append(
-            {
-                "user_id": prof_u.id,
-                "display_name": prof_u.display_name,
-                "per_round": per_round,
-                "season_total": season_total,
-            }
-        )
-
-    standings = sorted(standings, key=lambda x: x["season_total"], reverse=True)
-    for i, entry in enumerate(standings, 1):
-        entry["rank"] = i
-        entry["is_me"] = entry["user_id"] == user.id
-    _redact_season_cohort_peers(standings, user)
-
-    rdigits = [n for s in standings for n in s.get("per_round", {}).keys()]
-    max_n = int(template.total_rounds)
-    for r in rdigits:
-        try:
-            max_n = max(max_n, int(r))
-        except ValueError:
-            pass
-    col_rounds = [{"round_number": n} for n in range(1, max_n + 1)]
-
-    return {
-        "room_id": room_id,
-        "template_id": template_id,
-        "template_name": template.name,
-        "cohort": True,
-        "rounds": col_rounds,
-        "standings": standings,
-    }

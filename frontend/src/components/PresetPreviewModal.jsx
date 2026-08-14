@@ -11,6 +11,7 @@ export default function PresetPreviewModal({
   roundBoundaries = [],
   loading = false,
   error = null,
+  dataTour = null,
 }) {
   useEffect(() => {
     if (!open) return;
@@ -34,6 +35,7 @@ export default function PresetPreviewModal({
       <div
         className="max-h-[90vh] w-full max-w-5xl overflow-auto rounded-xl border border-slate-700 bg-slate-800 p-6 shadow-lg"
         onClick={(e) => e.stopPropagation()}
+        {...(dataTour ? { 'data-tour': dataTour } : {})}
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

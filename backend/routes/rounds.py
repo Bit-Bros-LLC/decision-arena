@@ -53,30 +53,10 @@ def create_round(
     user: UserRow = Depends(require_professor),
     db: Session = Depends(get_db),
 ):
-    room = db.query(RoomRow).filter(RoomRow.id == body.room_id).first()
-    if not room or room.professor_id != user.id:
-        raise HTTPException(403, "Not your classroom")
-    if room.completed:
-        raise HTTPException(400, "This class is completed; no more months can be created")
-
-    existing_count = db.query(RoundRow).filter(RoundRow.room_id == body.room_id).count()
-    deadline_dt = datetime.fromisoformat(body.deadline)
-
-    rnd = RoundRow(
-        room_id=body.room_id,
-        round_number=existing_count + 1,
-        historical_data=body.historical_data,
-        actual_data=body.actual_data,
-        costs=body.costs,
-        starting_inventory=body.starting_inventory,
-        deadline=deadline_dt,
-        status="draft",
+    raise HTTPException(
+        410,
+        "Standalone months have been removed. Create a fiscal year or practice run instead.",
     )
-    db.add(rnd)
-    db.commit()
-    db.refresh(rnd)
-
-    return _round_response(rnd, reveal_actuals=True)
 
 
 @router.put("/{round_id}", response_model=RoundResponse)
@@ -89,6 +69,11 @@ def update_round(
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
         raise HTTPException(404, "Month not found")
+    if rnd.season_id is None:
+        raise HTTPException(
+            410,
+            "Standalone months have been removed. Manage months inside a fiscal year or practice run.",
+        )
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
@@ -186,6 +171,11 @@ def activate_round(
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
         raise HTTPException(404, "Month not found")
+    if rnd.season_id is None:
+        raise HTTPException(
+            410,
+            "Standalone months have been removed. Activate months via a fiscal year or practice run.",
+        )
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
@@ -211,6 +201,8 @@ def delete_round(
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
         raise HTTPException(404, "Month not found")
+    if rnd.season_id is None:
+        raise HTTPException(410, "Standalone months have been removed.")
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:
@@ -233,6 +225,11 @@ def score_round(
     rnd = db.query(RoundRow).filter(RoundRow.id == round_id).first()
     if not rnd:
         raise HTTPException(404, "Month not found")
+    if rnd.season_id is None:
+        raise HTTPException(
+            410,
+            "Standalone months have been removed. Score months via a fiscal year or practice run.",
+        )
 
     room = db.query(RoomRow).filter(RoomRow.id == rnd.room_id).first()
     if room.professor_id != user.id:

@@ -3,12 +3,16 @@
 A story package is a fully pre-built season: it bundles the mechanical config a
 professor would otherwise pick by hand (rounds, contract updates, duration,
 lead-in, starting inventory, costs) together with a hand-authored, deterministic
-demand timeline and a narrative + timed "news" hints rendered to students.
+demand timeline and a professor-only narrative briefing + timed "news" items.
+
+The full narrative and complete news timeline are for the professor. Students
+only unlock news items as each month arrives (``reveal_round``), typically seeing
+current events and upcoming forecasts — never the whole arc up front.
 
 Unlike the algorithmic presets in ``season_scenarios.py``, a story's timeline is
-frozen and curated so that the events students read about in the news line up
-*exactly* with what happens in the simulated demand (e.g. a supplier storm in
-the news is a real burst of ``supplier_failure`` days that month).
+frozen and curated so that the events students eventually read line up exactly
+with simulated demand (e.g. a supplier storm in the news is a real burst of
+``supplier_failure`` days that month).
 
 Each timeline is shape::
 
@@ -230,14 +234,20 @@ STORY_PACKAGES: list[dict] = [
         "costs": {**DEFAULT_COSTS, "dual_source_enabled": True, "dual_source_premium_per_unit": 2, "dual_source_rescue_pct": 1},
         "build_timeline": _build_supplier_meltdown,
         "news": [
+            # Month 2 — viral launch
             {"reveal_round": 1, "about_round": 2, "kind": "forecast", "headline": "Buzz building around next month's launch", "body": "Marketing reports record pre-orders for the new gadget. Expect a demand surge starting next month."},
-            {"reveal_round": 1, "about_round": 3, "kind": "forecast", "headline": "Analysts flag spring port congestion", "body": "Shipping analysts warn that port congestion could disrupt suppliers in about two months. Keep a policy review in reserve."},
             {"reveal_round": 2, "about_round": 2, "kind": "event", "headline": "Launch goes viral — demand surges", "body": "The new gadget is everywhere. Demand has jumped well above baseline and is still climbing."},
+            # Month 3 — first storm month
+            {"reveal_round": 1, "about_round": 3, "kind": "forecast", "headline": "Analysts flag spring port congestion", "body": "Shipping analysts warn that port congestion could disrupt suppliers in about two months. Keep a policy review in reserve."},
             {"reveal_round": 2, "about_round": 3, "kind": "forecast", "headline": "Supplier issues force-majeure warning", "body": "Your primary supplier has issued a force-majeure notice for next month. Now is the time to plan for dual sourcing or extra buffer."},
             {"reveal_round": 3, "about_round": 3, "kind": "event", "headline": "Supplier storm hits — shipments cancelled", "body": "Port congestion is cancelling in-flight orders. Expect frequent supplier failures this month."},
+            # Month 4 — storm continues
             {"reveal_round": 3, "about_round": 4, "kind": "forecast", "headline": "Disruption expected to persist", "body": "Logistics teams see no quick fix — the disruption will likely continue into next month."},
             {"reveal_round": 4, "about_round": 4, "kind": "event", "headline": "Storm persists into a second month", "body": "Supplier failures continue. Dual-sourced orders are your best chance to keep shelves stocked."},
+            # Month 5 — recovery
             {"reveal_round": 5, "about_round": 5, "kind": "event", "headline": "Supply lines reopening, demand cooling", "body": "Ports are clearing and demand is easing back toward normal. Time to right-size inventory."},
+            # Month 6 — baseline restored
+            {"reveal_round": 6, "about_round": 6, "kind": "event", "headline": "Demand back near baseline", "body": "Conditions look calm again. Leave enough buffer for residual volatility without overstocking."},
         ],
     },
     {
@@ -262,12 +272,19 @@ STORY_PACKAGES: list[dict] = [
         "costs": {**DEFAULT_COSTS},
         "build_timeline": _build_holiday_rush,
         "news": [
+            # Month 2 — flash campaign
             {"reveal_round": 1, "about_round": 2, "kind": "forecast", "headline": "Marketing plans a flash campaign", "body": "A short, sharp promotional push is scheduled for next month. Expect a temporary demand spike."},
-            {"reveal_round": 1, "about_round": 4, "kind": "forecast", "headline": "Holiday season approaching", "body": "The holiday peak is two months out and is expected to be the biggest demand event of the fiscal year. Start planning your build-up."},
             {"reveal_round": 2, "about_round": 2, "kind": "event", "headline": "Flash campaign drives a spike", "body": "The campaign landed — demand spiked mid-month before settling back down."},
+            # Month 3 — build toward the holidays
+            {"reveal_round": 1, "about_round": 3, "kind": "forecast", "headline": "Holiday season approaching", "body": "The holiday peak is still two months out and is expected to be the biggest demand event of the fiscal year. Start planning your build-up."},
+            {"reveal_round": 3, "about_round": 3, "kind": "event", "headline": "Demand climbs toward the holidays", "body": "Orders are building steadily as retailers stock for the season. The peak is still ahead."},
+            # Month 4 — holiday peak
             {"reveal_round": 3, "about_round": 4, "kind": "forecast", "headline": "Retailers brace for record holiday demand", "body": "Forecasts point to a record holiday peak next month. Consider spending a policy review now to build inventory ahead of it."},
             {"reveal_round": 4, "about_round": 4, "kind": "event", "headline": "Holiday rush peaks", "body": "Demand has surged to its seasonal high. Service levels this month make or break the fiscal year."},
+            # Month 5 — slump
             {"reveal_round": 5, "about_round": 5, "kind": "event", "headline": "Post-holiday slump sets in", "body": "Demand has dropped sharply and is choppy. Trim inventory to avoid holding costs."},
+            # Month 6 — settle
+            {"reveal_round": 6, "about_round": 6, "kind": "event", "headline": "Demand settles near baseline", "body": "The holiday noise is over. Orders are back to a manageable, steady level."},
         ],
     },
     {
@@ -293,13 +310,21 @@ STORY_PACKAGES: list[dict] = [
         "costs": {**DEFAULT_COSTS, "dual_source_enabled": True, "dual_source_premium_per_unit": 3, "dual_source_rescue_pct": 1},
         "build_timeline": _build_boom_bust_swan,
         "news": [
+            # Month 2 — boom begins
             {"reveal_round": 1, "about_round": 2, "kind": "forecast", "headline": "New market opening — boom forecast", "body": "Your product is launching into a fast-growing market. Demand is expected to jump to a higher level starting next month."},
             {"reveal_round": 2, "about_round": 2, "kind": "event", "headline": "Boom underway — orders surge", "body": "Demand has shifted up to a new, sustained level. Scale your policy to the new regime."},
-            {"reveal_round": 2, "about_round": 4, "kind": "forecast", "headline": "Competitor announces market entry", "body": "A major competitor is entering in two months. Analysts warn of a sharp downturn — keep a policy review ready to scale down."},
+            # Month 3 — boom plateau (foreshadowing the bust)
+            {"reveal_round": 2, "about_round": 3, "kind": "forecast", "headline": "Competitor announces market entry", "body": "A major competitor is preparing to enter next month. The boom may still hold for now — but plan for a later downturn."},
+            {"reveal_round": 3, "about_round": 3, "kind": "event", "headline": "Boom holds at a higher plateau", "body": "Demand remains elevated. Use this window to prepare before saturation hits."},
+            # Month 4 — structural bust
+            {"reveal_round": 2, "about_round": 4, "kind": "forecast", "headline": "Rival set to take share in two months", "body": "Analysts warn the competitor's entry will drive a sharp downturn in about two months — keep a policy review ready to scale down."},
             {"reveal_round": 3, "about_round": 4, "kind": "forecast", "headline": "Signs of market saturation", "body": "Growth is stalling and saturation is setting in. The boom likely ends next month."},
             {"reveal_round": 4, "about_round": 4, "kind": "event", "headline": "The bust arrives — demand collapses", "body": "Demand has fallen well below baseline as the competitor takes share. Cut your order-up-to levels to avoid piling up inventory."},
+            # Month 5 — outage on a weak market
             {"reveal_round": 4, "about_round": 5, "kind": "forecast", "headline": "Logistics disruption flagged", "body": "A supplier outage is expected next month — on top of weak demand. Dual sourcing may help protect what little demand remains."},
             {"reveal_round": 5, "about_round": 5, "kind": "event", "headline": "Supplier outage strikes a weak market", "body": "A logistics outage is causing supplier failures while demand is already depressed. Balance rescue costs against thin margins."},
+            # Month 6 — stabilize
+            {"reveal_round": 6, "about_round": 6, "kind": "event", "headline": "Market steadies at a lower level", "body": "Demand is no longer freefalling. Recalibrate to the new, softer baseline."},
         ],
     },
 ]

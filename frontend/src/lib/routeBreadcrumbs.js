@@ -21,14 +21,6 @@ function crumb(label, to, overrideId) {
  */
 const ROUTE_CRUMBS = [
   {
-    pattern: '/leaderboard/room/:roomId/template/:templateId/cohort',
-    build: (p) => [
-      crumb('Dashboard', '/dashboard'),
-      crumb('Classroom', `/room/${p.roomId}`, 'room'),
-      crumb('Case study cohort', null, 'leaderboardLeaf'),
-    ],
-  },
-  {
     pattern: '/leaderboard/season/:seasonId',
     build: () => [
       crumb('Dashboard', '/dashboard'),
@@ -40,14 +32,6 @@ const ROUTE_CRUMBS = [
     build: () => [
       crumb('Dashboard', '/dashboard'),
       crumb('Month leaderboard', null, 'leaderboardRound'),
-    ],
-  },
-  {
-    pattern: '/room/:roomId/edit-round/:roundId',
-    build: (p) => [
-      crumb('Dashboard', '/dashboard'),
-      crumb('Classroom', `/room/${p.roomId}`, 'room'),
-      crumb('Edit month', null),
     ],
   },
   {
@@ -63,15 +47,7 @@ const ROUTE_CRUMBS = [
     build: (p) => [
       crumb('Dashboard', '/dashboard'),
       crumb('Classroom', `/room/${p.roomId}`, 'room'),
-      crumb('New case study', null),
-    ],
-  },
-  {
-    pattern: '/room/:roomId/create-round',
-    build: (p) => [
-      crumb('Dashboard', '/dashboard'),
-      crumb('Classroom', `/room/${p.roomId}`, 'room'),
-      crumb('Create month', null),
+      crumb('New practice run', null),
     ],
   },
   {

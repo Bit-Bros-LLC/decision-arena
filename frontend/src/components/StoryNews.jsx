@@ -45,7 +45,8 @@ function NewsCard({ item, upcoming }) {
  * - When `activeRoundNumber` is a number (student view), only items whose
  *   `reveal_round <= activeRoundNumber` are shown; items about a future round
  *   render as "Upcoming" forecasts.
- * - When `activeRoundNumber` is null (preview / professor), every item is shown.
+ * - When `activeRoundNumber` is null (professor briefing), every item is shown.
+ *   Students never get this full timeline from the API — only unlocked news.
  */
 export default function StoryNews({ news, activeRoundNumber = null, emptyText = 'No news yet.' }) {
   const items = Array.isArray(news) ? news : [];
@@ -55,10 +56,18 @@ export default function StoryNews({ news, activeRoundNumber = null, emptyText = 
     ? [...items]
     : items.filter((n) => Number(n.reveal_round) <= Number(activeRoundNumber));
 
+  // Chronological by the month the item is about, then when it appears,
+  // then forecast before event so the newsroom reads top → bottom as the year.
   visible.sort((a, b) => {
-    const r = Number(a.reveal_round) - Number(b.reveal_round);
-    if (r !== 0) return r;
-    return Number(a.about_round) - Number(b.about_round);
+    const about = Number(a.about_round) - Number(b.about_round);
+    if (about !== 0) return about;
+    const reveal = Number(a.reveal_round) - Number(b.reveal_round);
+    if (reveal !== 0) return reveal;
+    if (a.kind !== b.kind) {
+      if (a.kind === 'forecast') return -1;
+      if (b.kind === 'forecast') return 1;
+    }
+    return 0;
   });
 
   if (visible.length === 0) {

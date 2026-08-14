@@ -595,7 +595,9 @@ export default function PolicyEditor() {
     roundActive &&
     Boolean(seasonMeta?.owner_user_id) &&
     seasonMeta.owner_user_id === user?.user_id &&
-    (seasonMeta?.season_scope === 'sandbox' || Boolean(seasonMeta?.source_template_id));
+    (Boolean(seasonMeta?.is_practice_run) ||
+      seasonMeta?.season_scope === 'sandbox' ||
+      Boolean(seasonMeta?.source_template_id));
 
   const submitNextSteps = (() => {
     if (!hasSubmittedPolicy) return null;
@@ -697,7 +699,8 @@ export default function PolicyEditor() {
                 Newsroom
               </h2>
               <p className="mt-1 text-[11px] text-slate-500">
-                Use forecasts to decide whether spending a policy review now is worth it.
+                Current and upcoming headlines only — use forecasts to decide whether a policy review
+                is worth it now.
               </p>
               <div className="mt-2">
                 <StoryNews news={relevant} activeRoundNumber={current} />

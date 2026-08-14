@@ -1,39 +1,41 @@
 /**
  * Driver.js steps for the professor fiscal year creator onboarding tour.
- * @param {boolean} [hasStorySelected=false] — when true, step 1 includes Next (deep link / restart with story picked)
+ * Order matches the create-season form top → bottom (after story select),
+ * with an auto-opened demand preview modal as step 1.
+ *
+ * @param {boolean} [hasStorySelected=false] — when true, step 0 includes Next (deep link / restart with story picked)
  */
+
+/** Index of the demand-preview modal step (after stories). */
+export const PROFESSOR_SEASON_DEMAND_PREVIEW_STEP = 1;
+
 export function buildProfessorSeasonTourSteps(hasStorySelected = false) {
   return [
     {
       element: '[data-tour="season-stories"]',
       title: 'Start from a story',
       description: hasStorySelected
-        ? 'Premade fiscal years bundle months, costs, demand timeline, and student news. Click Next to review what this story includes.'
-        : 'Premade fiscal years bundle months, costs, demand timeline, and student news. Click **Use this story** on a card — the tour continues automatically.',
+        ? 'Premade fiscal years bundle months, costs, demand timeline, and a full story briefing for you. Click Next to preview demand for this story.'
+        : 'Premade fiscal years bundle months, costs, demand timeline, and a full story briefing for you. Click **Use this story** on a card — a demand preview opens and the tour continues automatically.',
       side: 'bottom',
       advanceOnStorySelect: !hasStorySelected,
       showButtons: hasStorySelected ? undefined : ['previous', 'close'],
     },
     {
-      element: '[data-tour="season-story-narrative"]',
-      title: 'The story',
+      element: '[data-tour="season-demand-preview"]',
+      title: 'Demand preview',
       description:
-        'Students read this narrative for context. It sets the scene for the fiscal year they are managing.',
-      side: 'bottom',
+        'Historical demand (amber) plus the fiscal-year timeline students will face. Close this chart when you are ready to continue.',
+      side: 'left',
+      advanceOnModalClose: true,
+      showButtons: ['previous', 'close'],
     },
     {
-      element: '[data-tour="season-newsroom"]',
-      title: 'Newsroom preview',
+      element: '[data-tour="season-custom"]',
+      title: 'Custom configuration',
       description:
-        'Forecasts and events students see month by month. They must decide when to spend a policy review to react to the news.',
+        'Need full control? Expand this to build manually. Mechanical tuning lives under Advanced users.',
       side: 'bottom',
-    },
-    {
-      element: '[data-tour="season-story-demand"]',
-      title: 'Preview demand chart',
-      description:
-        'Opens a chart of historical demand plus the fiscal-year timeline students will face. Use it to sanity-check difficulty before you create.',
-      side: 'top',
     },
     {
       element: '[data-tour="season-name"]',
@@ -49,11 +51,18 @@ export function buildProfessorSeasonTourSteps(hasStorySelected = false) {
       side: 'bottom',
     },
     {
-      element: '[data-tour="season-custom"]',
-      title: 'Custom configuration',
+      element: '[data-tour="season-story-narrative"]',
+      title: 'The story (you only)',
       description:
-        'Need full control? Expand this to build manually. Mechanical tuning lives under Advanced users.',
-      side: 'top',
+        'Professor briefing only — students never see this full arc, so the year stays a challenge. Use it to understand what will happen before you create.',
+      side: 'bottom',
+    },
+    {
+      element: '[data-tour="season-newsroom"]',
+      title: 'Newsroom preview',
+      description:
+        'Full year briefing for you. Students only unlock news as each month arrives — typically current events and upcoming forecasts — then decide whether a policy review is worth it.',
+      side: 'bottom',
     },
     {
       element: '[data-tour="season-create"]',
@@ -65,9 +74,21 @@ export function buildProfessorSeasonTourSteps(hasStorySelected = false) {
   ];
 }
 
-/** Selectors that must exist before the tour can start. */
+/**
+ * Selectors that must exist before the tour can start.
+ * Excludes the demand-preview modal (only mounted while open).
+ */
 export function getProfessorSeasonTourStartupSelectors(hasStorySelected) {
-  const steps = buildProfessorSeasonTourSteps(hasStorySelected);
-  if (hasStorySelected) return steps.map((s) => s.element);
-  return [steps[0].element];
+  if (!hasStorySelected) {
+    return ['[data-tour="season-stories"]'];
+  }
+  return [
+    '[data-tour="season-stories"]',
+    '[data-tour="season-custom"]',
+    '[data-tour="season-name"]',
+    '[data-tour="season-deadline"]',
+    '[data-tour="season-story-narrative"]',
+    '[data-tour="season-newsroom"]',
+    '[data-tour="season-create"]',
+  ];
 }

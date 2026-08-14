@@ -23,7 +23,9 @@ def get_onboarding_status(
         db.query(SeasonRow)
         .filter(
             SeasonRow.owner_user_id == user.id,
-            (SeasonRow.season_scope == "sandbox") | (SeasonRow.source_template_id.isnot(None)),
+            (SeasonRow.season_scope == "sandbox")
+            | (SeasonRow.is_practice_run == True)  # noqa: E712
+            | (SeasonRow.source_template_id.isnot(None)),
         )
         .first()
         is not None

@@ -4,7 +4,7 @@ A competitive inventory simulation game where students design operating policies
 
 The public **landing page** (`/`) introduces the product; signed-in users use the **dashboard**, **onboarding** (checklist + guided tours), **classrooms**, **fiscal years**, and **Learn** modules below.
 
-> **Terminology:** API routes and internal identifiers still use `/rooms`, `/seasons`, and `/rounds`. In the UI, these map to **Classroom**, **Fiscal Year**, **Month**, **Practice Run** (private solo play), **Case Study** (shared template), and **Policy Review** (limited policy changes between months).
+> **Terminology:** API routes and internal identifiers still use `/rooms`, `/seasons`, and `/rounds`. In the UI, these map to **Classroom**, **Fiscal Year**, **Month**, **Practice Run**, and **Policy Review** (limited policy changes between months).
 
 ## Getting started
 
@@ -19,7 +19,7 @@ First-run onboarding helps students and professors reach a successful play loop 
 **Recommended first paths**
 
 - **Student (solo):** Dashboard → Create Private Practice Run → open a month → Policy Editor (backtest → submit) → advance/score → Results
-- **Professor:** Dashboard → Create classroom → create a fiscal year or month → activate → score → advance fiscal year
+- **Professor:** Dashboard → Create classroom → create a fiscal year → activate → score → advance fiscal year
 
 Full implementation reference: [`docs/onboarding-plan.md`](docs/onboarding-plan.md).
 
@@ -27,41 +27,24 @@ Full implementation reference: [`docs/onboarding-plan.md`](docs/onboarding-plan.
 
 | Mode | What it is |
 |------|------------|
-| **Classic months** | Professor hand-builds each month: historical window + hidden actuals. Works great for tight instructor control. |
 | **Classroom fiscal years** | A **fiscal year** under a class **classroom** auto-generates many months from **scenario presets** and optional **mix** rules. Students play through months with **policy reviews** (limited policy changes between months). |
-| **Practice runs (sandbox)** | A private **practice run** anyone can start—no classroom required. For practice; listed under **Practice Runs** in the nav. |
-| **Case studies** | Professors **publish** a case study in a classroom; each student can **instantiate** their own copy and run it asynchronously, so the class shares the same ruleset with independent runs. |
+| **Practice runs** | Private sandbox runs anyone can start, or classroom practice runs started inside a class (professor can see class runs). Listed under **Practice Runs** in the nav and on the classroom Activity tab. |
 
 ## How it works
-
-### Classic months (standalone)
-
-1. **Professor creates a month** with historical demand data (60+ days) and secretly sets 30 days of "actual" data
-2. **Students explore** the historical data, pick a policy template, tune it with sliders, and backtest as many times as they want
-3. **Students submit** their policy before the deadline
-4. **Professor scores** the month — all policies run against the hidden actuals
-5. **Results** show summary metrics, charts, highlights, and a full day-by-day log; **leaderboards** compare the class
-6. **Repeat** with more standalone months, or use fiscal years (below) for a linked multi-month experience
 
 ### Fiscal years and practice runs
 
 1. A fiscal year defines **N months**, **costs**, **starting inventory**, **month length**, and **lead-in history** length
 2. **Scenario engine**: pick a base **preset** and a **mode**—single scenario for every month, **random mix** from allowed presets, or **custom mix** (per-month preset). Browse presets with demand previews in the **Scenario Library** (`/scenarios`)
 3. **Policy reviews** cap how many times a student can revise policy between months; changing policy may require signaling/unlocking the next month per fiscal year rules
-4. **Activate** the fiscal year, then **advance** to score the current month and unlock the next (professor-led in class; practice-run owners can drive their own sandbox)
+4. **Activate** the fiscal year, then **advance** to score the current month and unlock the next (professor-led in class; practice-run owners can drive their own runs)
 5. **Cumulative P&L** across scored months is tracked; use the **Fiscal Year** tab on the leaderboard for a per-month matrix plus fiscal year total
 
-### Practice run sandbox
+### Practice runs
 
-1. From **Practice Runs** or **Create Private Practice Run**, open the **practice run** builder (same levers as classroom fiscal years: months, mix, policy reviews, etc.)
-2. The run is **scoped to you**—no class leaderboard unless you also play in a classroom
+1. From **Practice Runs** or a classroom Activity tab, open the **practice run** builder (same levers as classroom fiscal years: months, mix, policy reviews, etc.)
+2. Private runs are **scoped to you**. Classroom practice runs are visible to the owner and the class professor.
 3. Owners can use **undo last advance** / related flows where the UI offers them, to iterate on practice
-
-### Classroom case studies (for classes)
-
-1. In a **classroom**, a professor can **publish** a case study (name + fiscal year parameters)
-2. Students (or the professor) **start** a fiscal year from a case study; each start is a **new fiscal year instance** with its own randomization where applicable
-3. **Cohort standings** aggregate results across fiscal year instances of the same case study—open from a classroom’s case studies in the UI, or via the cohort leaderboard API
 
 ## Learn
 
@@ -121,7 +104,7 @@ Three policy templates are available:
 ### Professor tools
 
 - **Scenario Library** (`/scenarios`) — browse engine scenario presets with demand preview charts (amber = historical lead-in students see; sky = full fiscal year demand). Linked from fiscal year creator and classroom flows when picking mix modes.
-- **Month authoring** — create standalone months with optional dual sourcing, costs, and historical/actual JSON (see Admin month editor).
+- **Classroom Activity** — create shared fiscal years and view classroom practice runs; Class Admin holds the invite code.
 
 ## Tech Stack
 
@@ -195,12 +178,12 @@ decision-arena/
     routes/
       auth_routes.py        Register, login, profile, admin password reset, list users
       rooms.py              Classrooms + join + complete (end class)
-      rounds.py             Standalone months: CRUD, activate, delete, score
+      rounds.py             Month get/list; standalone create/edit disabled (410)
       policies.py           Save/update policy, get, delete (un-submit), backtest
       policy_presets.py     User policy presets
-      results.py            Per-month results, month/fiscal year/cohort leaderboards
+      results.py            Per-month results, month/fiscal year leaderboards
       lessons.py            Lesson progress
-      seasons.py            Fiscal year CRUD, advance, templates, practice-run/sandbox lists
+      seasons.py            Fiscal year CRUD, advance, practice-run/sandbox lists
       onboarding.py         GET /users/me/onboarding-status
     simulation/
       engine.py             run_simulation()
@@ -213,13 +196,12 @@ decision-arena/
       pages/
         LandingPage.jsx     Marketing landing
         Login.jsx, Dashboard.jsx, AccountSettings.jsx
-        RoomView.jsx        Classroom: months, fiscal years, case studies
-        Admin.jsx           Create/edit standalone months
+        RoomView.jsx        Classroom Activity: fiscal years + practice runs; Class Admin invite
         SeasonCreator.jsx, SeasonView.jsx, SeasonSprintBuilder.jsx, SoloSeasonsPage.jsx
         ScenarioLibrary.jsx Browse scenario presets with demand previews
         PolicyEditor.jsx    Play month: backtest, submit
         RoundResults.jsx    Scored results, charts, log
-        Leaderboard.jsx     Month + fiscal year + cohort
+        Leaderboard.jsx     Month + fiscal year
         LearnHub.jsx, LessonPage.jsx, lessons/   # 11 interactive lessons (incl. EnterTheArena)
       components/           NavBar, OnboardingTour, DashboardChecklist, HelpMenu, IntroVideoModal, …
       context/              OnboardingContext, breadcrumb labels
@@ -256,17 +238,15 @@ decision-arena/
 | POST | `/rooms/{room_id}/join` | Join with invite code |
 | POST | `/rooms/{room_id}/complete` | Mark class complete (end class) |
 
-### Rounds (standalone months)
+### Rounds (months inside fiscal years / practice runs)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/rounds` | Create month |
-| PUT | `/rounds/{round_id}` | Update month |
 | GET | `/rounds/{round_id}` | Get month (actuals redacted until scored) |
 | GET | `/rounds/room/{room_id}` | List months in classroom |
-| POST | `/rounds/{round_id}/activate` | Activate |
-| POST | `/rounds/{round_id}/score` | Score |
-| DELETE | `/rounds/{round_id}` | Delete month |
+| POST | `/rounds/{round_id}/score` | Score (season-linked months only; standalone removed) |
+
+Standalone month create/edit/activate/delete return **410 Gone**.
 
 ### Policies and presets
 
@@ -286,8 +266,7 @@ decision-arena/
 |--------|------|-------------|
 | GET | `/results/{round_id}` | My results (after score) |
 | GET | `/leaderboard/{round_id}` | Month leaderboard |
-| GET | `/leaderboard/season/{season_id}` | Fiscal year standings (per-month + total) |
-| GET | `/leaderboard/room/{room_id}/template/{template_id}/cohort` | Cohort standings across fiscal year instances of one classroom case study (also in UI from classroom case studies) |
+| GET | `/leaderboard/season/{season_id}` | Fiscal year / practice run standings (per-month + total) |
 
 ### Lessons
 
@@ -297,25 +276,24 @@ decision-arena/
 | POST | `/lessons/{slug}/complete` | Mark complete |
 | POST | `/lessons/{slug}/reset` | Reset progress |
 
-### Seasons and case studies
+### Seasons (fiscal years and practice runs)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/seasons/presets` | List engine scenario presets |
 | POST | `/seasons/preview` | Preview generated fiscal year data (no persist) |
-| POST | `/seasons` | Create fiscal year |
+| POST | `/seasons` | Create fiscal year or practice run (`is_practice_run`) |
 | GET | `/seasons/{season_id}` | Get fiscal year + months |
 | GET | `/seasons/{season_id}/my-state` | My policy-review state, etc. |
 | POST | `/seasons/{season_id}/activate` | Activate |
 | POST | `/seasons/{season_id}/advance` | Score current and advance |
-| POST | `/seasons/{season_id}/undo-latest-advance` | Undo last advance (when allowed) |
+| POST | `/seasons/{season_id}/undo-latest-advance` | Undo last advance (practice runs) |
 | POST | `/seasons/{season_id}/rounds/{round_id}/unlock` | Unlock policy-change edit for a month |
-| GET | `/seasons/room/{room_id}` | List fiscal years in classroom |
-| GET | `/seasons/sandbox` | List current user’s fiscal years with `season_scope` sandbox only |
+| GET | `/seasons/room/{room_id}` | List fiscal years + visible practice runs in classroom |
+| GET | `/seasons/sandbox` | List current user’s sandbox practice runs |
 | GET | `/seasons/my-solo` | List current user’s practice runs |
-| GET | `/seasons/room/{room_id}/solo-templates` | List case studies for classroom |
-| POST | `/seasons/room/{room_id}/solo-templates` | Create/publish case study |
-| POST | `/seasons/room/{room_id}/solo-templates/{template_id}/instantiate` | Start a new fiscal year from case study |
+
+Case study / solo-template endpoints return **410 Gone**.
 
 ## Deployment
 

@@ -108,7 +108,9 @@ export default function RoundResults() {
             if (!cancelled) setSeason(seasonRes);
             const isSolo =
               seasonRes?.owner_user_id === user?.user_id &&
-              (seasonRes?.season_scope === 'sandbox' || Boolean(seasonRes?.source_template_id));
+              (Boolean(seasonRes?.is_practice_run) ||
+                seasonRes?.season_scope === 'sandbox' ||
+                Boolean(seasonRes?.source_template_id));
             setIsSoloSeasonRound(Boolean(isSolo));
           } catch {
             setIsSoloSeasonRound(false);
