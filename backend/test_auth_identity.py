@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import uuid
 
-from auth import AuthIdentity, _resolve_user_for_identity, hash_password, user_has_role
+from auth import (
+    AuthIdentity,
+    EXTERNAL_AUTH_PASSWORD_SENTINEL,
+    _resolve_user_for_identity,
+    user_has_role,
+)
 from database import UserRow, get_db, init_db
 
 
@@ -13,11 +18,12 @@ def _unique_email() -> str:
 def test_external_identity_links_existing_user_by_email():
     init_db()
     email = _unique_email()
+    subject = f"zitadel-subject-{uuid.uuid4().hex[:8]}"
     db = next(get_db())
     try:
         user = UserRow(
             email=email,
-            password_hash=hash_password("test123"),
+            password_hash=EXTERNAL_AUTH_PASSWORD_SENTINEL,
             display_name="Existing User",
             role="student",
         )
@@ -26,8 +32,7 @@ def test_external_identity_links_existing_user_by_email():
         db.refresh(user)
 
         identity = AuthIdentity(
-            provider="oidc",
-            subject="zitadel-subject-1",
+            subject=subject,
             issuer="https://zitadel.nonprod.example",
             email=email,
             display_name="Existing User Renamed",
@@ -38,9 +43,9 @@ def test_external_identity_links_existing_user_by_email():
         linked = _resolve_user_for_identity(identity, db)
 
         assert linked.id == user.id
-        assert linked.auth_provider == "oidc"
+        assert linked.auth_provider == "zitadel"
         assert linked.auth_issuer == "https://zitadel.nonprod.example"
-        assert linked.auth_subject == "zitadel-subject-1"
+        assert linked.auth_subject == subject
         assert linked.role == "professor"
         assert linked.display_name == "Existing User Renamed"
     finally:
@@ -50,11 +55,11 @@ def test_external_identity_links_existing_user_by_email():
 def test_external_identity_provisions_new_local_user():
     init_db()
     email = _unique_email()
+    subject = f"zitadel-subject-{uuid.uuid4().hex[:8]}"
     db = next(get_db())
     try:
         identity = AuthIdentity(
-            provider="oidc",
-            subject="zitadel-subject-2",
+            subject=subject,
             issuer="https://zitadel.nonprod.example",
             email=email,
             display_name="Brand New User",
@@ -65,9 +70,9 @@ def test_external_identity_provisions_new_local_user():
         created = _resolve_user_for_identity(identity, db)
 
         assert created.email == email
-        assert created.auth_provider == "oidc"
+        assert created.auth_provider == "zitadel"
         assert created.auth_issuer == "https://zitadel.nonprod.example"
-        assert created.auth_subject == "zitadel-subject-2"
+        assert created.auth_subject == subject
         assert created.role == "student"
         assert created.display_name == "Brand New User"
         assert created.account_status == "active"
@@ -81,7 +86,7 @@ def test_user_has_role_prefers_attached_auth_roles():
     try:
         user = UserRow(
             email=_unique_email(),
-            password_hash=hash_password("test123"),
+            password_hash=EXTERNAL_AUTH_PASSWORD_SENTINEL,
             display_name="Role User",
             role="student",
         )

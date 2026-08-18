@@ -2,95 +2,57 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.error import URLError
 from urllib.request import urlopen
 
-import bcrypt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database import UserRow, get_db
 
-SECRET_KEY = os.getenv("JWT_SECRET", "dev-secret-change-me-in-production")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 48
-AUTH_MODE = os.getenv("AUTH_MODE", "local_jwt").strip().lower()
-AUTH_ROLES_CLAIM = os.getenv("AUTH_ROLES_CLAIM", "role").strip()
-AUTH_JWKS_CACHE_TTL_SECONDS = int(os.getenv("AUTH_JWKS_CACHE_TTL_SECONDS", "300"))
+ZITADEL_ISSUER = os.getenv("ZITADEL_ISSUER", "").strip()
+ZITADEL_AUDIENCE = os.getenv("ZITADEL_AUDIENCE", "").strip()
+ZITADEL_DISCOVERY_URL = os.getenv("ZITADEL_DISCOVERY_URL", "").strip()
+ZITADEL_ALLOWED_ALGORITHMS = [
+    item.strip()
+    for item in os.getenv("ZITADEL_ALLOWED_ALGORITHMS", "RS256").split(",")
+    if item.strip()
+]
+ZITADEL_ROLES_CLAIM = os.getenv("ZITADEL_ROLES_CLAIM", "role").strip()
+ZITADEL_JWKS_CACHE_TTL_SECONDS = int(
+    os.getenv("ZITADEL_JWKS_CACHE_TTL_SECONDS", "300")
+)
+EXTERNAL_AUTH_PASSWORD_SENTINEL = "__zitadel_managed__"
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 @dataclass
 class AuthIdentity:
-    provider: str
     subject: str
-    issuer: str | None
+    issuer: str
     email: str | None
     display_name: str | None
     roles: list[str]
     claims: dict[str, Any]
 
 
-class BaseTokenValidator:
-    provider_name = "base"
-
-    def validate_access_token(self, token: str) -> AuthIdentity:
-        raise NotImplementedError
-
-
-class LocalJwtTokenValidator(BaseTokenValidator):
-    provider_name = "local_jwt"
-
-    def validate_access_token(self, token: str) -> AuthIdentity:
-        credentials_exception = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            user_id = payload.get("sub")
-            if not user_id:
-                raise credentials_exception
-            role = payload.get("role")
-            roles = [role] if isinstance(role, str) and role else []
-        except JWTError:
-            raise credentials_exception
-
-        return AuthIdentity(
-            provider=self.provider_name,
-            subject=user_id,
-            issuer="local",
-            email=None,
-            display_name=None,
-            roles=roles,
-            claims=payload,
-        )
-
-
-class OidcTokenValidator(BaseTokenValidator):
-    provider_name = "oidc"
-
+class ZitadelTokenValidator:
     def __init__(self):
-        self.issuer = os.getenv("OIDC_ISSUER", "").strip()
-        self.audience = os.getenv("OIDC_AUDIENCE", "").strip()
-        self.discovery_url = os.getenv("OIDC_DISCOVERY_URL", "").strip()
-        if not self.discovery_url and self.issuer:
-            self.discovery_url = f"{self.issuer.rstrip('/')}/.well-known/openid-configuration"
-        self.algorithms = [
-            item.strip()
-            for item in os.getenv("OIDC_ALLOWED_ALGORITHMS", "RS256").split(",")
-            if item.strip()
-        ]
+        self.issuer = ZITADEL_ISSUER
+        self.audience = ZITADEL_AUDIENCE
+        self.discovery_url = ZITADEL_DISCOVERY_URL or (
+            f"{self.issuer.rstrip('/')}/.well-known/openid-configuration"
+            if self.issuer
+            else ""
+        )
+        self.algorithms = ZITADEL_ALLOWED_ALGORITHMS
         self._jwks: dict[str, Any] | None = None
         self._jwks_fetched_at = 0.0
 
@@ -98,7 +60,7 @@ class OidcTokenValidator(BaseTokenValidator):
         if not self.issuer or not self.audience or not self.discovery_url:
             raise HTTPException(
                 status_code=500,
-                detail="OIDC authentication is not fully configured",
+                detail="ZITADEL authentication is not fully configured",
             )
 
         credentials_exception = HTTPException(
@@ -128,7 +90,6 @@ class OidcTokenValidator(BaseTokenValidator):
             raise credentials_exception
 
         return AuthIdentity(
-            provider=self.provider_name,
             subject=subject,
             issuer=self.issuer,
             email=payload.get("email"),
@@ -150,7 +111,7 @@ class OidcTokenValidator(BaseTokenValidator):
 
     def _get_jwks(self) -> dict[str, Any]:
         now = time.time()
-        if self._jwks and (now - self._jwks_fetched_at) < AUTH_JWKS_CACHE_TTL_SECONDS:
+        if self._jwks and (now - self._jwks_fetched_at) < ZITADEL_JWKS_CACHE_TTL_SECONDS:
             return self._jwks
 
         try:
@@ -158,7 +119,7 @@ class OidcTokenValidator(BaseTokenValidator):
                 discovery = json.load(response)
             jwks_uri = discovery.get("jwks_uri")
             if not jwks_uri:
-                raise RuntimeError("OIDC discovery document missing jwks_uri")
+                raise RuntimeError("ZITADEL discovery document missing jwks_uri")
             with urlopen(jwks_uri, timeout=5) as response:
                 self._jwks = json.load(response)
             self._jwks_fetched_at = now
@@ -171,32 +132,17 @@ class OidcTokenValidator(BaseTokenValidator):
         return self._jwks or {"keys": []}
 
 
-_token_validator: BaseTokenValidator | None = None
+_token_validator: ZitadelTokenValidator | None = None
 
 
 def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
-
-
-def create_token(user_id: str, role: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
-    return jwt.encode({"sub": user_id, "role": role, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
-
-
-def get_token_validator() -> BaseTokenValidator:
+def get_token_validator() -> ZitadelTokenValidator:
     global _token_validator
     if _token_validator is None:
-        _token_validator = (
-            OidcTokenValidator() if AUTH_MODE == "oidc" else LocalJwtTokenValidator()
-        )
+        _token_validator = ZitadelTokenValidator()
     return _token_validator
 
 
@@ -206,10 +152,17 @@ def reset_token_validator_cache():
 
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> UserRow:
-    identity = get_token_validator().validate_access_token(token)
+    if credentials is None or not credentials.credentials:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    identity = get_token_validator().validate_access_token(credentials.credentials)
     user = _resolve_user_for_identity(identity, db)
     _attach_auth_context(user, identity)
     return user
@@ -229,7 +182,7 @@ def user_has_role(user: UserRow, role: str) -> bool:
 
 
 def _attach_auth_context(user: UserRow, identity: AuthIdentity) -> None:
-    setattr(user, "auth_provider_name", identity.provider)
+    setattr(user, "auth_provider_name", "zitadel")
     setattr(user, "auth_roles", identity.roles or ([user.role] if user.role else []))
     setattr(user, "auth_identity_subject", identity.subject)
     setattr(user, "auth_identity_issuer", identity.issuer)
@@ -237,28 +190,14 @@ def _attach_auth_context(user: UserRow, identity: AuthIdentity) -> None:
 
 
 def _resolve_user_for_identity(identity: AuthIdentity, db: Session) -> UserRow:
-    if identity.provider == "local_jwt":
-        user = db.query(UserRow).filter(UserRow.id == identity.subject).first()
-        if user is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or expired token",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        if user.account_status != "active":
-            raise HTTPException(status_code=403, detail="Account is not active")
-        return user
-
-    user = None
-    if identity.issuer:
-        user = (
-            db.query(UserRow)
-            .filter(
-                UserRow.auth_issuer == identity.issuer,
-                UserRow.auth_subject == identity.subject,
-            )
-            .first()
+    user = (
+        db.query(UserRow)
+        .filter(
+            UserRow.auth_issuer == identity.issuer,
+            UserRow.auth_subject == identity.subject,
         )
+        .first()
+    )
 
     normalized_email = normalize_email(identity.email) if identity.email else None
     if user is None and normalized_email:
@@ -273,10 +212,10 @@ def _resolve_user_for_identity(identity: AuthIdentity, db: Session) -> UserRow:
             raise HTTPException(401, "Authenticated identity did not provide an email address")
         user = UserRow(
             email=normalized_email,
-            password_hash=hash_password(secrets.token_urlsafe(32)),
+            password_hash=EXTERNAL_AUTH_PASSWORD_SENTINEL,
             display_name=identity.display_name or normalized_email.split("@", 1)[0],
             role=_primary_app_role(identity.roles),
-            auth_provider=identity.provider,
+            auth_provider="zitadel",
             auth_issuer=identity.issuer,
             auth_subject=identity.subject,
             account_status="active",
@@ -286,7 +225,7 @@ def _resolve_user_for_identity(identity: AuthIdentity, db: Session) -> UserRow:
         db.refresh(user)
         return user
 
-    user.auth_provider = identity.provider
+    user.auth_provider = "zitadel"
     user.auth_issuer = identity.issuer
     user.auth_subject = identity.subject
     if identity.display_name and user.display_name != identity.display_name:
@@ -310,7 +249,7 @@ def _extract_display_name(claims: dict[str, Any]) -> str | None:
 
 
 def _extract_roles(claims: dict[str, Any]) -> list[str]:
-    raw = claims.get(AUTH_ROLES_CLAIM)
+    raw = claims.get(ZITADEL_ROLES_CLAIM)
     if isinstance(raw, str):
         return [raw]
     if isinstance(raw, list):
