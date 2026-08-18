@@ -4,5 +4,10 @@
 *.db-wal
 *.db-shm
 backend/decision_arena.db
+
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+
 backend/.venv/
 backend/.env.local
