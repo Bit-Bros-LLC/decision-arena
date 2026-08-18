@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import Login from './pages/Login'
+import AuthCallback from './pages/AuthCallback'
 import Dashboard from './pages/Dashboard'
 import RoomView from './pages/RoomView'
 import PolicyEditor from './pages/PolicyEditor'
@@ -24,7 +25,7 @@ import { BreadcrumbLabelsProvider } from './context/BreadcrumbLabelsContext'
 import { AnalyticsConsentProvider } from './context/AnalyticsConsentContext'
 import ConsentBanner from './components/ConsentBanner'
 import AnalyticsTracker from './components/AnalyticsTracker'
-import { getUser } from './api'
+import { getUser } from './auth'
 import {
   getAnalyticsConsent,
   initAnalytics,
@@ -80,6 +81,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/privacy" element={<PrivacyPolicy />} />
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
