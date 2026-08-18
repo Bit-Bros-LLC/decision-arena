@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from auth import get_current_user, require_professor
+from auth import get_current_user, require_professor, user_has_role
 from database import (
     PolicyRow,
     RoundEditUnlockRow,
@@ -347,7 +347,7 @@ def create_season(
         room = db.query(RoomRow).filter(RoomRow.id == body.room_id).first()
         if not room:
             raise HTTPException(404, "Classroom not found")
-        if user.role == "professor":
+        if user_has_role(user, "professor"):
             if room.professor_id != user.id:
                 raise HTTPException(403, "Not your classroom")
         else:
@@ -478,7 +478,7 @@ def create_season(
         rounds.append(rnd)
 
     auto_start = bool(
-        scope == "sandbox" or body.source_template_id is not None or user.role != "professor"
+        scope == "sandbox" or body.source_template_id is not None or not user_has_role(user, "professor")
     )
     if auto_start and rounds:
         season.status = "active"
@@ -735,7 +735,7 @@ def activate_season(
     if not season:
         raise HTTPException(404, "Fiscal year not found")
     if season.room_id:
-        if user.role == "professor":
+        if user_has_role(user, "professor"):
             if not _is_professor_of(db, user, season.room_id):
                 raise HTTPException(403, "Not your classroom")
         else:
@@ -775,7 +775,7 @@ def advance_season(
     if not season:
         raise HTTPException(404, "Fiscal year not found")
     if season.room_id:
-        if user.role == "professor":
+        if user_has_role(user, "professor"):
             if not _is_professor_of(db, user, season.room_id):
                 raise HTTPException(403, "Not your classroom")
         else:
@@ -1027,7 +1027,7 @@ def list_room_solo_templates(
 ):
     _ensure_member(db, user, room_id)
     q = db.query(RoomSoloTemplateRow).filter(RoomSoloTemplateRow.room_id == room_id)
-    if user.role != "professor":
+    if not user_has_role(user, "professor"):
         q = q.filter(RoomSoloTemplateRow.is_published == True)
     rows = q.order_by(RoomSoloTemplateRow.created_at.desc()).all()
     return [_template_to_dict(r) for r in rows]

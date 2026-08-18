@@ -60,6 +60,10 @@ class UserRow(Base):
     password_hash = Column(String, nullable=False)
     display_name = Column(String, nullable=False)
     role = Column(String, nullable=False, default="student")  # "student" | "professor"
+    auth_provider = Column(String, nullable=True, index=True)
+    auth_issuer = Column(String, nullable=True)
+    auth_subject = Column(String, nullable=True, index=True)
+    account_status = Column(String, nullable=False, default="active")
     created_at = Column(DateTime, default=_now)
 
     policies = relationship("PolicyRow", back_populates="user")
@@ -316,6 +320,25 @@ def _migrate_schema():
                             "ALTER TABLE rooms ADD COLUMN completed BOOLEAN NOT NULL DEFAULT FALSE"
                         )
                     )
+
+    if insp.has_table("users"):
+        insp = inspect(engine)
+        user_cols = {c["name"] for c in insp.get_columns("users")}
+        alters = []
+        if "auth_provider" not in user_cols:
+            alters.append("ALTER TABLE users ADD COLUMN auth_provider VARCHAR")
+        if "auth_issuer" not in user_cols:
+            alters.append("ALTER TABLE users ADD COLUMN auth_issuer VARCHAR")
+        if "auth_subject" not in user_cols:
+            alters.append("ALTER TABLE users ADD COLUMN auth_subject VARCHAR")
+        if "account_status" not in user_cols:
+            alters.append(
+                "ALTER TABLE users ADD COLUMN account_status VARCHAR NOT NULL DEFAULT 'active'"
+            )
+        if alters:
+            with engine.begin() as conn:
+                for stmt in alters:
+                    conn.execute(text(stmt))
 
     if insp.has_table("rounds"):
         # Refresh inspector to see current columns.

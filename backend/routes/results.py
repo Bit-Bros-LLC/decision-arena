@@ -6,7 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import get_current_user, user_has_role
 from database import (
     UserRow, RoundRow, SeasonRow, RoomSoloTemplateRow,
     PolicyRow, ResultRow, get_db,
@@ -18,7 +18,7 @@ router = APIRouter(tags=["results"])
 
 def _redact_season_cohort_peers(standings: list[dict], user: UserRow) -> None:
     """In-place: students see 'Other player' and no peer user_id; professors unchanged."""
-    is_professor = user.role == "professor"
+    is_professor = user_has_role(user, "professor")
     for entry in standings:
         if not is_professor and not entry.get("is_me"):
             entry["display_name"] = "Other player"
