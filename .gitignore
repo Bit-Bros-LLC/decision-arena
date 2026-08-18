@@ -5,3 +5,4 @@
 *.db-shm
 backend/decision_arena.db
 backend/.venv/
+backend/.env.local
