@@ -24,9 +24,8 @@ async function request(path, options = {}) {
   }
 
   if (res.status === 401) {
-    const err = new Error(parseDetail(data, 'Unauthorized'));
-    err.status = 401;
-    throw err;
+    await logout();
+    return;
   }
 
   if (!res.ok) {
