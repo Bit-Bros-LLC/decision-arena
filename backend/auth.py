@@ -5,11 +5,12 @@ import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.error import URLError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -42,6 +43,7 @@ class ZitadelTokenValidator:
         self.jwks_cache_ttl_seconds = config.zitadel_jwks_cache_ttl_seconds
         self._jwks: dict[str, Any] | None = None
         self._jwks_fetched_at = 0.0
+        self._discovery_document: dict[str, Any] | None = None
 
     def validate_access_token(self, token: str) -> AuthIdentity:
         if not self.issuer or not self.audience or not self.discovery_url:
@@ -76,13 +78,20 @@ class ZitadelTokenValidator:
         if not isinstance(subject, str) or not subject:
             raise credentials_exception
 
+        merged_claims = dict(payload)
+        if not _claims_have_identity_profile(merged_claims) or not _claims_have_roles(
+            merged_claims, self.roles_claim
+        ):
+            userinfo = self._get_userinfo(token)
+            merged_claims.update(userinfo)
+
         return AuthIdentity(
             subject=subject,
             issuer=self.issuer,
-            email=payload.get("email"),
-            display_name=_extract_display_name(payload),
-            roles=_extract_roles(payload, self.roles_claim),
-            claims=payload,
+            email=merged_claims.get("email"),
+            display_name=_extract_display_name(merged_claims),
+            roles=_extract_roles(merged_claims, self.roles_claim),
+            claims=merged_claims,
         )
 
     def _get_signing_key(self, kid: str) -> dict[str, Any]:
@@ -102,8 +111,7 @@ class ZitadelTokenValidator:
             return self._jwks
 
         try:
-            with urlopen(self.discovery_url, timeout=5) as response:
-                discovery = json.load(response)
+            discovery = self._get_discovery_document()
             jwks_uri = discovery.get("jwks_uri")
             if not jwks_uri:
                 raise RuntimeError("ZITADEL discovery document missing jwks_uri")
@@ -117,6 +125,35 @@ class ZitadelTokenValidator:
             )
 
         return self._jwks or {"keys": []}
+
+    def _get_discovery_document(self) -> dict[str, Any]:
+        if self._discovery_document is not None:
+            return self._discovery_document
+
+        with urlopen(self.discovery_url, timeout=5) as response:
+            self._discovery_document = json.load(response)
+        return self._discovery_document
+
+    def _get_userinfo(self, token: str) -> dict[str, Any]:
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+        try:
+            discovery = self._get_discovery_document()
+            userinfo_endpoint = discovery.get("userinfo_endpoint")
+            if not userinfo_endpoint:
+                raise RuntimeError("ZITADEL discovery document missing userinfo_endpoint")
+            request = Request(
+                userinfo_endpoint,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            with urlopen(request, timeout=5) as response:
+                return json.load(response)
+        except (OSError, URLError, ValueError, RuntimeError):
+            raise credentials_exception
 
 
 _token_validator: ZitadelTokenValidator | None = None
@@ -208,9 +245,20 @@ def _resolve_user_for_identity(identity: AuthIdentity, db: Session) -> UserRow:
             account_status="active",
         )
         db.add(user)
-        db.commit()
-        db.refresh(user)
-        return user
+        try:
+            db.commit()
+            db.refresh(user)
+            return user
+        except IntegrityError:
+            # Concurrent first-login requests can race to provision the same local user.
+            db.rollback()
+            user = (
+                db.query(UserRow)
+                .filter(func.lower(UserRow.email) == normalized_email)
+                .first()
+            )
+            if user is None:
+                raise
 
     user.auth_provider = "zitadel"
     user.auth_issuer = identity.issuer
@@ -242,6 +290,17 @@ def _extract_roles(claims: dict[str, Any], roles_claim: str) -> list[str]:
     if isinstance(raw, list):
         return [item for item in raw if isinstance(item, str) and item]
     return []
+
+
+def _claims_have_identity_profile(claims: dict[str, Any]) -> bool:
+    return any(
+        isinstance(claims.get(key), str) and claims.get(key).strip()
+        for key in ("email", "preferred_username", "name", "given_name")
+    )
+
+
+def _claims_have_roles(claims: dict[str, Any], roles_claim: str) -> bool:
+    return bool(_extract_roles(claims, roles_claim))
 
 
 def _primary_app_role(roles: list[str]) -> str:
