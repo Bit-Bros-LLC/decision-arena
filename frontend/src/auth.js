@@ -99,7 +99,7 @@ function buildUserSnapshot(tokenPayload) {
       : [];
 
   return {
-    user_id: tokenPayload.sub || tokenPayload.email || 'unknown',
+    user_id: tokenPayload.sub || 'unknown',
     display_name:
       tokenPayload.name ||
       tokenPayload.preferred_username ||

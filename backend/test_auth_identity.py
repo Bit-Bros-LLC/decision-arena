@@ -15,7 +15,7 @@ def _unique_email() -> str:
     return f"auth-test-{uuid.uuid4().hex[:8]}@example.com"
 
 
-def test_external_identity_links_existing_user_by_email():
+def test_external_identity_does_not_link_existing_user_by_email():
     init_db()
     email = _unique_email()
     subject = f"zitadel-subject-{uuid.uuid4().hex[:8]}"
@@ -40,14 +40,15 @@ def test_external_identity_links_existing_user_by_email():
             claims={"email": email, "role": ["professor"]},
         )
 
-        linked = _resolve_user_for_identity(identity, db)
+        created = _resolve_user_for_identity(identity, db)
 
-        assert linked.id == user.id
-        assert linked.auth_provider == "zitadel"
-        assert linked.auth_issuer == "https://zitadel.nonprod.example"
-        assert linked.auth_subject == subject
-        assert linked.role == "professor"
-        assert linked.display_name == "Existing User Renamed"
+        assert created.id != user.id
+        assert created.email == email
+        assert created.auth_provider == "zitadel"
+        assert created.auth_issuer == "https://zitadel.nonprod.example"
+        assert created.auth_subject == subject
+        assert created.role == "professor"
+        assert created.display_name == "Existing User Renamed"
     finally:
         db.close()
 

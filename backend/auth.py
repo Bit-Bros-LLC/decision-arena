@@ -224,12 +224,6 @@ def _resolve_user_for_identity(identity: AuthIdentity, db: Session) -> UserRow:
     )
 
     normalized_email = normalize_email(identity.email) if identity.email else None
-    if user is None and normalized_email:
-        user = (
-            db.query(UserRow)
-            .filter(func.lower(UserRow.email) == normalized_email)
-            .first()
-        )
 
     if user is None:
         if not normalized_email:
@@ -250,11 +244,14 @@ def _resolve_user_for_identity(identity: AuthIdentity, db: Session) -> UserRow:
             db.refresh(user)
             return user
         except IntegrityError:
-            # Concurrent first-login requests can race to provision the same local user.
+            # Concurrent first-login requests can race to provision the same external identity.
             db.rollback()
             user = (
                 db.query(UserRow)
-                .filter(func.lower(UserRow.email) == normalized_email)
+                .filter(
+                    UserRow.auth_issuer == identity.issuer,
+                    UserRow.auth_subject == identity.subject,
+                )
                 .first()
             )
             if user is None:
