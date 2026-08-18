@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -14,20 +13,9 @@ from jose import JWTError, jwt
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from config import get_backend_config
 from database import UserRow, get_db
 
-ZITADEL_ISSUER = os.getenv("ZITADEL_ISSUER", "").strip()
-ZITADEL_AUDIENCE = os.getenv("ZITADEL_AUDIENCE", "").strip()
-ZITADEL_DISCOVERY_URL = os.getenv("ZITADEL_DISCOVERY_URL", "").strip()
-ZITADEL_ALLOWED_ALGORITHMS = [
-    item.strip()
-    for item in os.getenv("ZITADEL_ALLOWED_ALGORITHMS", "RS256").split(",")
-    if item.strip()
-]
-ZITADEL_ROLES_CLAIM = os.getenv("ZITADEL_ROLES_CLAIM", "role").strip()
-ZITADEL_JWKS_CACHE_TTL_SECONDS = int(
-    os.getenv("ZITADEL_JWKS_CACHE_TTL_SECONDS", "300")
-)
 EXTERNAL_AUTH_PASSWORD_SENTINEL = "__zitadel_managed__"
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -45,14 +33,13 @@ class AuthIdentity:
 
 class ZitadelTokenValidator:
     def __init__(self):
-        self.issuer = ZITADEL_ISSUER
-        self.audience = ZITADEL_AUDIENCE
-        self.discovery_url = ZITADEL_DISCOVERY_URL or (
-            f"{self.issuer.rstrip('/')}/.well-known/openid-configuration"
-            if self.issuer
-            else ""
-        )
-        self.algorithms = ZITADEL_ALLOWED_ALGORITHMS
+        config = get_backend_config()
+        self.issuer = config.zitadel_issuer
+        self.audience = config.zitadel_audience
+        self.discovery_url = config.zitadel_discovery_url
+        self.algorithms = config.zitadel_allowed_algorithms
+        self.roles_claim = config.zitadel_roles_claim
+        self.jwks_cache_ttl_seconds = config.zitadel_jwks_cache_ttl_seconds
         self._jwks: dict[str, Any] | None = None
         self._jwks_fetched_at = 0.0
 
@@ -94,7 +81,7 @@ class ZitadelTokenValidator:
             issuer=self.issuer,
             email=payload.get("email"),
             display_name=_extract_display_name(payload),
-            roles=_extract_roles(payload),
+            roles=_extract_roles(payload, self.roles_claim),
             claims=payload,
         )
 
@@ -111,7 +98,7 @@ class ZitadelTokenValidator:
 
     def _get_jwks(self) -> dict[str, Any]:
         now = time.time()
-        if self._jwks and (now - self._jwks_fetched_at) < ZITADEL_JWKS_CACHE_TTL_SECONDS:
+        if self._jwks and (now - self._jwks_fetched_at) < self.jwks_cache_ttl_seconds:
             return self._jwks
 
         try:
@@ -248,8 +235,8 @@ def _extract_display_name(claims: dict[str, Any]) -> str | None:
     return None
 
 
-def _extract_roles(claims: dict[str, Any]) -> list[str]:
-    raw = claims.get(ZITADEL_ROLES_CLAIM)
+def _extract_roles(claims: dict[str, Any], roles_claim: str) -> list[str]:
+    raw = claims.get(roles_claim)
     if isinstance(raw, str):
         return [raw]
     if isinstance(raw, list):
