@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/auth': 'http://127.0.0.1:8000',
+      '/auth/profile': 'http://127.0.0.1:8000',
       '/rooms': 'http://127.0.0.1:8000',
       '/rounds': 'http://127.0.0.1:8000',
       '/policies': 'http://127.0.0.1:8000',

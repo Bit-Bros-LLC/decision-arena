@@ -127,7 +127,7 @@ Three policy templates are available:
 
 - **Backend**: Python (FastAPI + Pydantic) + SQLAlchemy + PostgreSQL in production; **SQLite** for local dev. Structured fields use **JSONB** on Postgres and **JSON** on SQLite.
 - **Frontend**: React + Vite + Tailwind CSS + Recharts
-- **Auth**: JWT (bcrypt password hashing)
+- **Auth**: ZITADEL-issued OIDC bearer tokens validated by the backend
 
 ## Local Development
 
@@ -140,8 +140,10 @@ Three policy templates are available:
 
 ```bash
 cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp .env.example .env
+.venv/bin/uvicorn main:app --reload --port 8000
 ```
 
 The API runs at `http://localhost:8000` with auto-generated docs at `http://localhost:8000/docs`.
@@ -151,6 +153,22 @@ By default a SQLite file **`decision_arena.db`** is created in the working direc
 ```bash
 export DATABASE_URL=postgresql://user:pass@host:5432/decision_arena
 ```
+
+Backend auth is now **ZITADEL-only**. Before the backend will start, configure these environment variables in `backend/.env`:
+
+- `BACKEND_CORS_ORIGINS`
+- `ZITADEL_ISSUER`
+- `ZITADEL_AUDIENCE`
+- `ZITADEL_ALLOWED_ALGORITHMS`
+- `ZITADEL_ROLES_CLAIM`
+
+Optional:
+
+- `ZITADEL_DISCOVERY_URL`
+  If omitted, the backend derives it from `ZITADEL_ISSUER` as `/.well-known/openid-configuration`.
+- `ZITADEL_JWKS_CACHE_TTL_SECONDS`
+
+Example values are provided in [`backend/.env.example`](backend/.env.example).
 
 ### Frontend
 
@@ -189,11 +207,12 @@ Runs several policy configurations against a sample scenario and prints a leader
 decision-arena/
   backend/
     main.py                 FastAPI app; mounts route modules
-    auth.py                 JWT authentication helpers
+    auth.py                 ZITADEL/OIDC authentication helpers
+    config.py               Backend runtime config + required env validation
     database.py             Models: users, rooms, members, seasons, rounds, policies, presets,
                             results, lessons, room solo templates, season member state, etc.
     routes/
-      auth_routes.py        Register, login, profile, admin password reset, list users
+      auth_routes.py        ZITADEL-era auth endpoints; legacy local auth paths disabled
       rooms.py              Classrooms + join + complete (end class)
       rounds.py             Standalone months: CRUD, activate, delete, score
       policies.py           Save/update policy, get, delete (un-submit), backtest
@@ -358,4 +377,3 @@ decision-arena/
 ## License
 
 Built by [Bit Bros Data](https://bitbrosdata.com). Based on *The Decision Factory*.
-

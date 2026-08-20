@@ -1,8 +1,6 @@
-const BASE = import.meta.env.VITE_API_URL || '';
+import { getAccessToken, getUser, logout, updateCachedUser } from './auth';
 
-function getToken() {
-  return localStorage.getItem('da_token');
-}
+const BASE = import.meta.env.VITE_API_URL || '';
 
 function parseDetail(data, fallback) {
   const d = data?.detail;
@@ -12,9 +10,9 @@ function parseDetail(data, fallback) {
 }
 
 async function request(path, options = {}) {
-  const token = getToken();
+  const token = getAccessToken();
   const headers = { 'Content-Type': 'application/json', ...options.headers };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   const text = await res.text();
@@ -25,18 +23,9 @@ async function request(path, options = {}) {
     data = {};
   }
 
-  const authFailurePath = path === '/auth/login' || path === '/auth/register';
-
   if (res.status === 401) {
-    if (!authFailurePath) {
-      localStorage.removeItem('da_token');
-      localStorage.removeItem('da_user');
-      window.location.href = '/login';
-      return;
-    }
-    const err = new Error(parseDetail(data, 'Invalid credentials'));
-    err.status = 401;
-    throw err;
+    await logout();
+    return;
   }
 
   if (!res.ok) {
@@ -48,12 +37,8 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  register: (body) => request('/auth/register', { method: 'POST', body: JSON.stringify(body) }),
-  login: (body) => request('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   updateProfile: (body) => request('/auth/profile', { method: 'PUT', body: JSON.stringify(body) }),
-  listUsers: () => request('/auth/users'),
   getOnboardingStatus: () => request('/users/me/onboarding-status'),
-  adminResetPassword: (body) => request('/auth/admin-reset-password', { method: 'POST', body: JSON.stringify(body) }),
 
   getRooms: () => request('/rooms'),
   createRoom: (name) => request('/rooms', { method: 'POST', body: JSON.stringify({ name }) }),
@@ -113,26 +98,4 @@ export const api = {
   resetLesson: (slug) => request(`/lessons/${slug}/reset`, { method: 'POST' }),
 };
 
-export function setAuth(data) {
-  localStorage.setItem('da_token', data.access_token);
-  localStorage.setItem('da_user', JSON.stringify({
-    user_id: data.user_id, display_name: data.display_name, role: data.role,
-  }));
-}
-
-export function getUser() {
-  const raw = localStorage.getItem('da_user');
-  return raw ? JSON.parse(raw) : null;
-}
-
-export function updateCachedUser(updates) {
-  const current = getUser();
-  if (!current) return;
-  localStorage.setItem('da_user', JSON.stringify({ ...current, ...updates }));
-}
-
-export function logout() {
-  localStorage.removeItem('da_token');
-  localStorage.removeItem('da_user');
-  window.location.href = '/login';
-}
+export { getUser, logout, updateCachedUser };
